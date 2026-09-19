@@ -3,8 +3,17 @@
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 
+// A 0.1-0.2 micron deterministic nudge per vertex. Perfectly aligned holes (a QR code's modules all
+// share exact row edges) make the cap triangulator produce open edges; breaking the ties fixes that,
+// and 0.2 um is far below anything a printer can resolve.
+function nudge(x, y) {
+  const h = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+  const g = Math.sin(x * 39.3468 + y * 11.135) * 24634.6345;
+  return [x + ((h - Math.floor(h)) - 0.5) * 2e-4, y + ((g - Math.floor(g)) - 0.5) * 2e-4];
+}
+
 function layerGeometry(polys, z0, z1) {
-  const v = ([x, y]) => new THREE.Vector2(x, y);
+  const v = ([x, y]) => new THREE.Vector2(...nudge(x, y));
   const shapes = polys.map(({ outer, holes }) => {
     const shape = new THREE.Shape(outer.map(v));
     shape.holes = holes.map((h) => new THREE.Path(h.map(v)));
@@ -70,6 +79,7 @@ export function createPreview(container) {
     const dist = Math.max(fitH, fitW) * 1.15 + size.d;
     controls.target.set(0, 0, size.d / 2);
     if (view === 'top') camera.position.set(0, 0, dist + size.d / 2);
+    else if (view === 'back') camera.position.set(0, 0, -dist); // looking up at the underside; a QR reads correctly
     else camera.position.set(-dist * 0.45, -dist * 0.6, dist * 0.75 + size.d / 2);
     camera.up.set(0, 1, 0);
     camera.lookAt(controls.target);

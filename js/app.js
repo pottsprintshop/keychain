@@ -1,7 +1,7 @@
 import { parseFont, fontDisplayName } from './layout.js';
 import { buildKeychain, angleForHeight, DEFAULTS } from './geometry.js';
 import { createPreview } from './preview.js';
-import { stlFromGeometry, zipStore, downloadBlob, slug } from './exporters.js';
+import { stlFromGeometries, zipStore, downloadBlob, slug } from './exporters.js';
 
 const $ = (id) => document.getElementById(id);
 const MM_PER_IN = 25.4;
@@ -11,12 +11,14 @@ const el = {
   align: $('align'), lineSpacing: $('lineSpacing'), lineSpacingVal: $('lineSpacingVal'),
   width: $('width'), height: $('height'), unit: $('unit'), fit: $('fit'), sizeIncludesTab: $('sizeIncludesTab'), finalSize: $('finalSize'),
   textH: $('textH'), midH: $('midH'), baseH: $('baseH'), outline: $('outline'), baseMargin: $('baseMargin'),
-  fillGaps: $('fillGaps'), roundIn: $('roundIn'), roundOut: $('roundOut'),
+  fillGaps: $('fillGaps'), baseShape: $('baseShape'), plateRadius: $('plateRadius'), roundIn: $('roundIn'), roundOut: $('roundOut'),
   colorText: $('colorText'), colorOutline: $('colorOutline'), colorBase: $('colorBase'),
   holeEnabled: $('holeEnabled'), holeControls: $('holeControls'), holeDia: $('holeDia'), holeEdge: $('holeEdge'),
   holeGap: $('holeGap'), holeAngle: $('holeAngle'), holeAngleVal: $('holeAngleVal'), holePush: $('holePush'), holePushVal: $('holePushVal'),
   holeQuick: $('holeQuick'), holeHeights: $('holeHeights'), lineShifts: $('lineShifts'), lineShiftList: $('lineShiftList'),
-  viewTop: $('viewTop'), view3d: $('view3d'), preview: $('preview'), status: $('status'),
+  qrEnabled: $('qrEnabled'), qrControls: $('qrControls'), qrText: $('qrText'), qrEcc: $('qrEcc'), qrSize: $('qrSize'),
+  qrDepth: $('qrDepth'), colorQr: $('colorQr'), qrInfo: $('qrInfo'),
+  viewTop: $('viewTop'), view3d: $('view3d'), viewBack: $('viewBack'), preview: $('preview'), status: $('status'),
   format: $('format'), downloadBtn: $('downloadBtn'), exportInfo: $('exportInfo'),
 };
 
@@ -50,6 +52,8 @@ function readParams() {
     outline: num(el.outline, DEFAULTS.outline, 0),
     baseMargin: num(el.baseMargin, DEFAULTS.baseMargin, 0),
     fillGaps: el.fillGaps.checked,
+    baseShape: el.baseShape.value,
+    plateRadius: num(el.plateRadius, DEFAULTS.plateRadius, 0),
     roundIn: num(el.roundIn, DEFAULTS.roundIn, 0),
     roundOut: num(el.roundOut, DEFAULTS.roundOut, 0),
     holeEnabled: el.holeEnabled.checked,
@@ -59,10 +63,15 @@ function readParams() {
     holeAngle: num(el.holeAngle, DEFAULTS.holeAngle, 0),
     holePush: num(el.holePush, 0, 0) / 100,
     lineShifts: lineShifts.slice(),
+    qrEnabled: el.qrEnabled.checked,
+    qrText: el.qrText.value,
+    qrEcc: el.qrEcc.value,
+    qrSize: num(el.qrSize, 0, 0),
+    qrDepth: num(el.qrDepth, DEFAULTS.qrDepth, 0.2),
   };
 }
 
-const colors = () => ({ text: el.colorText.value, outline: el.colorOutline.value, base: el.colorBase.value });
+const colors = () => ({ text: el.colorText.value, outline: el.colorOutline.value, base: el.colorBase.value, qr: el.colorQr.value });
 
 function fmtSize(w, h, unit) {
   return unit === 'in' ? `${(w / MM_PER_IN).toFixed(2)} × ${(h / MM_PER_IN).toFixed(2)} in` : `${w.toFixed(1)} × ${h.toFixed(1)} mm`;
@@ -76,6 +85,7 @@ function syncLabels() {
   el.holePushVal.textContent = `${el.holePush.value}%`;
   for (const b of el.holeQuick.children) b.classList.toggle('active', Number(b.dataset.angle) === angle);
   el.holeControls.style.opacity = el.holeEnabled.checked ? '1' : '0.45';
+  el.qrControls.style.opacity = el.qrEnabled.checked ? '1' : '0.45';
 }
 
 // ---- Building ------------------------------------------------------------------
@@ -102,6 +112,11 @@ function rebuild() {
     el.finalSize.textContent =
       `Overall size${m.params.holeEnabled ? ' with key hole' : ''}: ${fmtSize(m.size.w, m.size.h, el.unit.value)} × ${m.size.d.toFixed(1)} mm thick` +
       ` (${fmtSize(m.size.w, m.size.h, el.unit.value === 'in' ? 'mm' : 'in')})`;
+    if (m.qr) {
+      el.qrInfo.textContent = `QR code: ${m.qr.n}\u00d7${m.qr.n} modules, ${m.qr.module.toFixed(2)} mm each, ${m.qr.side.toFixed(1)} mm square. Flip the keychain like a page to scan it.`;
+    } else if (el.qrEnabled.checked) {
+      el.qrInfo.textContent = el.qrText.value.trim() ? 'The QR code could not be made — see the note under the preview.' : 'Type what the QR code should say.';
+    }
     el.status.textContent = m.warnings.length
       ? m.warnings.join(' ')
       : `Built in ${Math.round(performance.now() - t0)} ms — drag to rotate, scroll to zoom.`;
@@ -263,19 +278,22 @@ async function download() {
   el.downloadBtn.disabled = true;
   try {
     if (el.format.value === 'stl') {
-      const files = preview.layers().map((l, i) => ({
-        name: `${name}-${i + 1}-${l.key}.stl`,
-        data: stlFromGeometry(l.geometry),
+      // A body can be built from more than one slab (the base, when there's a QR code): merge them.
+      const groups = new Map();
+      for (const l of preview.layers()) groups.set(l.key, [...(groups.get(l.key) || []), l.geometry]);
+      const files = [...groups].map(([key, geometries], i) => ({
+        name: `${name}-${i + 1}-${key}.stl`,
+        data: stlFromGeometries(geometries),
       }));
       downloadBlob(zipStore(files), `${name}-stl.zip`);
-      el.exportInfo.textContent = 'STL zip saved: base, outline and text as separate bodies.';
+      el.exportInfo.textContent = `STL zip saved: ${files.length} separate bodies (${[...groups.keys()].join(', ')}).`;
     } else {
       el.exportInfo.textContent = 'Building STEP… the CAD engine is a large one-time download (about 23 MB, cached afterwards).';
       const { buildStep } = await import('./step.js');
       const { blob, report } = await buildStep(model, colors(), (msg) => (el.exportInfo.textContent = msg));
       console.info('STEP built:', report);
       downloadBlob(blob, `${name}.step`);
-      el.exportInfo.textContent = 'STEP saved: base, outline and text as separate colored bodies.';
+      el.exportInfo.textContent = `STEP saved: ${model.qr ? 'base, outline, text and QR' : 'base, outline and text'} as separate colored bodies.`;
     }
   } catch (err) {
     console.error(err);
@@ -297,7 +315,7 @@ function initForm() {
   el.width.value = +(DEFAULTS.width / k).toFixed(3);
   el.height.value = +(DEFAULTS.height / k).toFixed(3);
   el.width.step = el.height.step = '0.05';
-  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap']) {
+  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'qrDepth', 'plateRadius']) {
     el[key].value = DEFAULTS[key];
   }
   el.holeAngle.value = DEFAULTS.holeAngle;
@@ -318,16 +336,23 @@ async function init() {
 
   const live = [
     el.text, el.font, el.align, el.lineSpacing, el.width, el.height, el.fit, el.sizeIncludesTab,
-    el.textH, el.midH, el.baseH, el.outline, el.baseMargin, el.fillGaps, el.roundIn, el.roundOut,
+    el.textH, el.midH, el.baseH, el.outline, el.baseMargin, el.fillGaps, el.baseShape, el.plateRadius, el.roundIn, el.roundOut,
     el.holeEnabled, el.holeDia, el.holeEdge, el.holeGap, el.holeAngle, el.holePush,
+    el.qrEnabled, el.qrText, el.qrEcc, el.qrSize, el.qrDepth,
   ];
   el.text.addEventListener('input', renderLineShifts);
   for (const input of live) input.addEventListener('input', schedule);
-  for (const input of [el.colorText, el.colorOutline, el.colorBase]) {
+  el.qrEnabled.addEventListener('change', () => {
+    // Show the back when the QR turns on, so it's the first thing they see.
+    if (el.qrEnabled.checked) setView('back');
+    else if (el.viewBack.classList.contains('active')) setView('top');
+  });
+  for (const input of [el.colorText, el.colorOutline, el.colorBase, el.colorQr]) {
     input.addEventListener('input', () => preview.setColors(colors()));
   }
   el.viewTop.addEventListener('click', () => setView('top'));
   el.view3d.addEventListener('click', () => setView('3d'));
+  el.viewBack.addEventListener('click', () => setView('back'));
   el.format.addEventListener('change', updateDownloadLabel);
   el.downloadBtn.addEventListener('click', download);
   updateDownloadLabel();
@@ -339,7 +364,8 @@ async function init() {
 function setView(v) {
   el.viewTop.classList.toggle('active', v === 'top');
   el.view3d.classList.toggle('active', v === '3d');
-  preview.setView(v === 'top' ? 'top' : 'iso');
+  el.viewBack.classList.toggle('active', v === 'back');
+  preview.setView(v === 'top' ? 'top' : v === 'back' ? 'back' : 'iso');
 }
 
 init();

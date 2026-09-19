@@ -3,6 +3,7 @@
 //   text     exact glyph curves (falls back to polygons if the curves don't check out)
 //   outline  polygon prism
 //   base     polygon prism (tab and fillets included) with an exact cylindrical hole
+//   qr       polygon prism (the light QR plate; the dark modules are base material)
 // Every "exact" build is checked (valid solid, volume matches the polygons) and
 // silently falls back to the polygon version if it isn't.
 
@@ -92,8 +93,9 @@ function glyphSolids(contours, z0, z1) {
 
 function build(model, colors, progress) {
   const report = { text: 'exact', outline: 'polygon', base: 'exact' };
-  const byKey = Object.fromEntries(model.layers.map((l) => [l.key, l]));
-  const { text, outline, base } = byKey;
+  const byKey = Object.fromEntries(model.layers.map((l) => [l.key, l])); // (the last of any repeated key)
+  const { text, outline } = byKey;
+  const base = model.layers.find((l) => l.key === 'base');
   const { contours, basePlain, hole } = model.exact;
 
   progress('Building the text…');
@@ -112,22 +114,42 @@ function build(model, colors, progress) {
   progress('Building the outline…');
   const outlineShape = prisms(outline.polys, outline.z0, outline.z1);
 
-  progress('Building the base…');
+  progress('Building the base\u2026');
+  const baseParts = model.layers.filter((l) => l.key === 'base');
+  const qrLayer = model.layers.find((l) => l.key === 'qr');
   let baseShape = null;
-  const baseH = base.z1 - base.z0;
+  const baseVolume = baseParts.reduce((t, l) => t + netArea(l.polys) * (l.z1 - l.z0), 0);
   try {
-    let shape = prisms(basePlain, base.z0, base.z1); // includes the tab and its fillets
+    // With a QR code the base is two slabs: a lower one with the light QR plate cut out, and the rest.
+    const slabs = qrLayer
+      ? [
+          { polys: model.exact.baseLowerPlain, z0: baseParts[0].z0, z1: baseParts[0].z1 },
+          { polys: basePlain, z0: baseParts[1].z0, z1: baseParts[1].z1 },
+        ]
+      : [{ polys: basePlain, z0: base.z0, z1: base.z1 }]; // includes the tab and its fillets
+    let shape = slabs.length === 1 ? prisms(slabs[0].polys, slabs[0].z0, slabs[0].z1) : R.makeCompound(slabs.map((s) => prisms(s.polys, s.z0, s.z1)));
     if (hole) {
-      const bore = R.makeCylinder(hole.R, baseH + 2, [hole.cx, hole.cy, base.z0 - 1], [0, 0, 1]);
+      const bore = R.makeCylinder(hole.R, model.size.d + 2, [hole.cx, hole.cy, base.z0 - 1], [0, 0, 1]);
       shape = shape.cut(bore);
     }
-    if (isValid(shape) && volumeOk(shape, netArea(base.polys) * baseH, 0.02)) baseShape = shape;
+    const valid = isValid(shape);
+    const vol = Math.abs(R.measureVolume(shape));
+    if (valid && volumeOk(shape, baseVolume, 0.02)) baseShape = shape;
+    else report.baseWhy = `valid=${valid} volume=${vol.toFixed(1)} expected=${baseVolume.toFixed(1)}`;
   } catch (e) {
     console.warn('Exact base failed, using polygons:', e);
+    report.baseWhy = String((e && e.message) || e);
   }
   if (!baseShape) {
     report.base = 'polygon';
-    baseShape = prisms(base.polys, base.z0, base.z1);
+    baseShape = R.makeCompound(baseParts.map((l) => prisms(l.polys, l.z0, l.z1)));
+  }
+
+  let qrShape = null;
+  if (qrLayer) {
+    progress('Building the QR code\u2026');
+    qrShape = prisms(qrLayer.polys, qrLayer.z0, qrLayer.z1);
+    report.qr = 'polygon';
   }
 
   progress('Writing the STEP file…');
@@ -135,6 +157,7 @@ function build(model, colors, progress) {
     { shape: baseShape, color: colors.base, name: 'Base' },
     { shape: outlineShape, color: colors.outline, name: 'Outline' },
     { shape: textShape, color: colors.text, name: 'Text' },
+    ...(qrShape ? [{ shape: qrShape, color: colors.qr, name: 'QR' }] : []),
   ]);
   return { blob, report };
 }

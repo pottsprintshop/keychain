@@ -31,7 +31,8 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   box; *Stretch text to fill* fills it exactly. By default the size is the keychain body and the
   key hole tab sticks out beyond it; tick *Count the key hole tab in the size* to include it.
 - **Layers** — color (preview and STEP), height, and how far the outline / base extend.
-  *Solid base* fills the gaps between letters. *Blend inside corners* / *Round outside corners*
+  *Base shape* is either *Follow the text* or a *Rectangle plate* that fills the whole width × height
+  you set. *Solid base* fills the gaps between letters. *Blend inside corners* / *Round outside corners*
   put fillets on the base (default 1 mm blend where the key hole tab joins the body); the outline
   and text are never altered.
 - **Key hole** — diameter, edge distance, and where it sits: quick Left / Top / Right / Bottom
@@ -39,15 +40,32 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   (180° = centered on the left), 20% / 50% / 80% height buttons, and *Sticks out* to pull it
   further from the text. *Nerd Shite* has
   the gap between the hole and the outline layer.
-- **Preview** — live 3D view (Top / 3D, drag to rotate, scroll to zoom).
+- **QR code on the back** — type a link or any text and a QR code is recessed into the back of the
+  base (see below).
+- **Preview** — live 3D view (Top / 3D / Back, drag to rotate, scroll to zoom).
+
+## QR code on the back
+
+A fourth body: a light QR plate (light modules plus a 2-module quiet zone) recessed flush into the
+underside of the base. The dark modules are simply the base material, so it scans as dark-on-light —
+keep the base color dark and the plate color light. Turn the keychain over like a page and it reads
+correctly (the pattern is mirrored in the model).
+
+- *Error correction* L / M / Q / H, *Size* (blank = the biggest square that fits), *Recess depth*
+  (default 0.6 mm, so the plate is the first layers on the bed).
+- The panel shows the module size. Under 0.8 mm won't print reliably on a 0.4 mm nozzle, and the app
+  warns you: shorten the text, use lower error correction, make the keychain bigger, or use the
+  *Rectangle plate* base, which leaves far more room than a base that follows the letters.
+- Verified by decoding the rendered back view with an independent QR reader (URLs, Wi-Fi codes,
+  accented and emoji text, at all four error-correction levels).
 
 ## Exports
 
-- **STEP (3 bodies)** — bodies named *Base*, *Outline*, *Text* with their colors. The letters are
+- **STEP (3 or 4 bodies)** — bodies named *Base*, *Outline*, *Text* (and *QR*) with their colors. The letters are
   true curves and the key hole is an exact cylinder. The outline and base are polygons
   (0.015 mm tolerance), so files run a few MB. The export runs in a Web Worker and loads the CAD
   engine (23 MB raw, about 7 MB gzipped, then cached by the browser) only when you click Download.
-- **STL (3 files, zipped)** — one watertight STL per body, in mm, ready to import as parts.
+- **STL (zipped)** — one watertight STL per body (3, or 4 with a QR code), in mm, ready to import as parts.
 
 ## Running it
 
@@ -66,7 +84,8 @@ It publishes as-is with GitHub Pages (Settings → Pages → Deploy from a branc
 index.html, style.css     the page
 js/app.js                 UI and wiring
 js/layout.js              text layout, curve flattening (opentype.js)
-js/geometry.js            fit-to-size, outline/base offsets (Clipper), key hole placement
+js/geometry.js            fit-to-size, outline/base offsets (Clipper), key hole placement, QR layout
+js/qr.js                  QR encoding (qrcode-generator)
 js/preview.js             three.js preview
 js/exporters.js           binary STL, zip, download
 js/step.js, step-worker.js  STEP export (OpenCascade via replicad) in a Web Worker

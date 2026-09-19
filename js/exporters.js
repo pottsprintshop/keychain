@@ -29,6 +29,21 @@ export function stlFromGeometry(geometry) {
   return new Uint8Array(buf);
 }
 
+// Several geometries -> one binary STL (used when a body is built from more than one slab).
+export function stlFromGeometries(geometries) {
+  const parts = geometries.map(stlFromGeometry);
+  const counts = parts.map((b) => new DataView(b.buffer, b.byteOffset).getUint32(80, true));
+  const total = counts.reduce((a, b) => a + b, 0);
+  const out = new Uint8Array(84 + total * 50);
+  new DataView(out.buffer).setUint32(80, total, true);
+  let o = 84;
+  parts.forEach((b, i) => {
+    out.set(b.subarray(84, 84 + counts[i] * 50), o);
+    o += counts[i] * 50;
+  });
+  return out;
+}
+
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {

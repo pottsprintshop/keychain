@@ -7,6 +7,7 @@
 
 import '../vendor/clipper.js';
 import { layoutText, transformContours, flattenContour, bboxOfPolylines, NOMINAL } from './layout.js';
+import { makeQr } from './qr.js';
 
 const CL = globalThis.ClipperLib;
 const SCALE = 1000; // Clipper works in integers: 1 unit = 1 micron
@@ -29,6 +30,8 @@ export const DEFAULTS = {
   outline: 0.8, // outline layer extends this far past the text
   baseMargin: 2.0, // base layer extends this far past the outline
   fillGaps: true, // base is a solid silhouette (no see-through counters)
+  baseShape: 'text', // 'text' follows the letters; 'plate' is a rounded rectangle behind them
+  plateRadius: 3, // corner radius of the rectangle base (mm)
   roundIn: 1.0, // base: fillet radius on inside (concave) corners, incl. where the key hole tab joins
   roundOut: 0, // base: rounding radius on outside (convex) corners
   holeEnabled: true,
@@ -38,7 +41,17 @@ export const DEFAULTS = {
   holeAngle: 180, // where around the keychain the hole sits, degrees: 0 = right, 90 = top, 180 = left (centered), 270 = bottom
   holePush: 0, // 0..1: how far the tab sticks out past its snug position
   lineShifts: [], // per-line sideways nudge, % of the widest line
+  qrEnabled: false, // a QR code on the back
+  qrText: '',
+  qrEcc: 'M', // error correction: L, M, Q or H
+  qrSize: 0, // side of the QR square in mm incl. its quiet zone; 0 = as big as fits
+  qrDepth: 0.6, // how deep the QR plate is recessed into the base (mm)
 };
+
+const QR_QUIET = 2; // light border around the QR code, in modules
+const QR_WALL = 1; // keep the QR plate at least this far inside the base's edge (mm)
+const QR_MIN_MODULE = 0.8; // smaller than this won't print reliably on a 0.4 mm nozzle
+const QR_GAP = 0.02; // dark modules shrink by this (mm) so ones touching only at a corner don't pinch
 
 // ---- Clipper helpers -------------------------------------------------------
 
@@ -67,10 +80,10 @@ function runClipper(type, subject, clip) {
 
 const unionTree = (paths) => runClipper(CL.ClipType.ctUnion, paths);
 
-function offsetTree(paths, deltaMM) {
+function offsetTree(paths, deltaMM, join = CL.JoinType.jtRound) {
   if (Math.abs(deltaMM) < 1e-9) return unionTree(paths);
   const co = new CL.ClipperOffset(2, ARC_TOL);
-  co.AddPaths(paths, CL.JoinType.jtRound, CL.EndType.etClosedPolygon);
+  co.AddPaths(paths, join, CL.EndType.etClosedPolygon);
   const tree = new CL.PolyTree();
   co.Execute(tree, deltaMM * SCALE);
   return tree;
@@ -141,12 +154,16 @@ function simplifyRing(pts, eps) {
 
 const SIMPLIFY_EPS = 0.015; // mm
 
-function simplifyPolys(polys) {
+function simplifyPolys(polys, eps = SIMPLIFY_EPS) {
   return polys.map(({ outer, holes }) => ({
-    outer: simplifyRing(outer, SIMPLIFY_EPS),
-    holes: holes.map((h) => simplifyRing(h, SIMPLIFY_EPS)).filter((h) => h.length >= 3),
+    outer: simplifyRing(outer, eps),
+    holes: holes.map((h) => simplifyRing(h, eps)).filter((h) => h.length >= 3),
   }));
 }
+
+// Drop only exactly-collinear vertices (Clipper works in whole microns, so 0.5 um can't touch real
+// geometry). The cap triangulator drops them anyway, and leaving them in the side walls makes T-junctions.
+const dropCollinear = (polys) => simplifyPolys(polys, 0.0005);
 
 export function circlePoints(cx, cy, r, tol = 0.005) {
   let n = Math.ceil(Math.PI / Math.acos(1 - Math.min(tol / r, 0.5)));
@@ -201,12 +218,14 @@ function rayHit(rings, cx, cy, dx, dy) {
 
 // Slide the hole to the requested angle around the text. `polylines` are the text
 // outlines (any frame). Returns { cx, cy, R, Rt, need }.
-export function placeHole(polylines, p) {
+export function placeHole(polylines, p, plate = null) {
   const h = holeMetrics(p);
   const bb = bboxOfPolylines(polylines);
   const a = (p.holeAngle * Math.PI) / 180;
   const dx = Math.cos(a), dy = Math.sin(a);
-  const rings = holeTrack(polylines, h.need);
+  // For a rectangle base the hole slides along the plate's edge (far enough out to clear the
+  // outline layer); otherwise along the text's outline.
+  const rings = plate ? holeTrack([plate.ring], Math.max(0, h.need - plate.margin)) : holeTrack(polylines, h.need);
   const hit = rayHit(rings, bb.cx, bb.cy, dx, dy);
   let cx, cy;
   if (hit) {
@@ -241,6 +260,83 @@ export function angleForHeight(track, side, frac) {
   return Math.round((deg + 360) % 360);
 }
 
+
+// ---- QR code on the back ------------------------------------------------------
+
+const rectPath = (cx, cy, hw, hh) => {
+  const x0 = Math.round((cx - hw) * SCALE), x1 = Math.round((cx + hw) * SCALE);
+  const y0 = Math.round((cy - hh) * SCALE), y1 = Math.round((cy + hh) * SCALE);
+  return [{ X: x0, Y: y0 }, { X: x1, Y: y0 }, { X: x1, Y: y1 }, { X: x0, Y: y1 }];
+};
+
+// Outline of the rectangle base (centred, corners rounded), as a polyline in mm.
+const plateRing = (hw, hh, r) => fromPath(roundPaths([rectPath(0, 0, hw, hh)], 0, Math.min(r, hw, hh))[0]);
+
+const squarePath = (cx, cy, side) => {
+  const x0 = Math.round((cx - side / 2) * SCALE), x1 = Math.round((cx + side / 2) * SCALE);
+  const y0 = Math.round((cy - side / 2) * SCALE), y1 = Math.round((cy + side / 2) * SCALE);
+  return [{ X: x0, Y: y0 }, { X: x1, Y: y0 }, { X: x1, Y: y1 }, { X: x0, Y: y1 }];
+};
+
+// Lay a QR code on the back of the base, centred at (cx, cy). Seen from the back it reads
+// correctly (the pattern is mirrored left-right in model space). Returns the light plate
+// (light modules + quiet zone) as paths; the dark modules are simply left as base material.
+function layoutQr(qr, basePunchedPaths, cx, cy, p, warnings) {
+  const cells = qr.n + 2 * QR_QUIET;
+  const inner = allPaths(offsetTree(basePunchedPaths, -QR_WALL));
+  const fits = (side) => treeToPolys(runClipper(CL.ClipType.ctDifference, [squarePath(cx, cy, side)], inner)).length === 0;
+
+  let side;
+  if (p.qrSize > 0) {
+    side = p.qrSize;
+    if (!fits(side)) warnings.push('The QR code is bigger than the back of the keychain, so part of it hangs off the edge.');
+  } else {
+    const bb = { w: 0, h: 0 };
+    for (const path of basePunchedPaths) {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const { X, Y } of path) { x0 = Math.min(x0, X); x1 = Math.max(x1, X); y0 = Math.min(y0, Y); y1 = Math.max(y1, Y); }
+      bb.w = Math.max(bb.w, (x1 - x0) / SCALE);
+      bb.h = Math.max(bb.h, (y1 - y0) / SCALE);
+    }
+    let lo = 0, hi = Math.min(bb.w, bb.h);
+    for (let i = 0; i < 14; i++) {
+      const mid = (lo + hi) / 2;
+      if (fits(mid)) lo = mid; else hi = mid;
+    }
+    // Round the module size down to 0.05 mm so the numbers stay tidy.
+    side = Math.floor(lo / cells / 0.05) * 0.05 * cells;
+  }
+  const module = side / cells;
+  if (!(module > 0)) return null;
+  if (module < QR_MIN_MODULE) {
+    warnings.push(
+      `The QR modules are only ${module.toFixed(2)} mm — too small to print reliably. Use a shorter link, lower error correction, a bigger keychain${p.baseShape === 'plate' ? '' : ', or the Rectangle base shape'}.`,
+    );
+  }
+
+  // Grid lines in integer microns, so neighbouring modules share exact edges.
+  const gx = [], gy = [];
+  for (let k = 0; k <= cells; k++) {
+    gx.push(Math.round((cx - side / 2 + k * module) * SCALE));
+    gy.push(Math.round((cy + side / 2 - k * module) * SCALE)); // row 0 is the top
+  }
+  const dark = [];
+  for (let r = 0; r < qr.n; r++) {
+    for (let c = 0; c < qr.n; c++) {
+      if (!qr.isDark(r, c)) continue;
+      const col = QR_QUIET + (qr.n - 1 - c); // mirrored: it's on the back
+      const row = QR_QUIET + r;
+      dark.push([{ X: gx[col], Y: gy[row + 1] }, { X: gx[col + 1], Y: gy[row + 1] }, { X: gx[col + 1], Y: gy[row] }, { X: gx[col], Y: gy[row] }]);
+    }
+  }
+  const plate = [[{ X: gx[0], Y: gy[cells] }, { X: gx[cells], Y: gy[cells] }, { X: gx[cells], Y: gy[0] }, { X: gx[0], Y: gy[0] }]];
+  // Shrink the dark modules a hair: two that touch only at a corner would make a pinched, invalid
+  // face. Both the light plate and the dark islands in the base use this same shape.
+  const darkShrunk = allPaths(offsetTree(allPaths(unionTree(dark)), -QR_GAP, CL.JoinType.jtMiter));
+  const light = allPaths(runClipper(CL.ClipType.ctDifference, plate, darkShrunk));
+  return { light, side, module, cells, n: qr.n };
+}
+
 // ---- Fit + build ------------------------------------------------------------
 
 export function buildKeychain(font, params) {
@@ -256,12 +352,23 @@ export function buildKeychain(font, params) {
 
   const scaledCoarse = (sx, sy) =>
     coarse.map((pl) => pl.map(([x, y]) => [(x - ink.cx) * sx, (y - ink.cy) * sy]));
-  const bodyBox = (sx, sy) => {
-    const hw = (ink.w * sx) / 2 + M, hh = (ink.h * sy) / 2 + M;
+  const plateMode = p.baseShape === 'plate';
+  // Half-extents of the base body. A rectangle base fills the whole width x height you asked
+  // for ("expanded"); while fitting, and for the text-shaped base, it just hugs the text.
+  const halfBox = (sx, sy, expanded) => {
+    let hw = (ink.w * sx) / 2 + M, hh = (ink.h * sy) / 2 + M;
+    if (expanded && plateMode && !p.sizeIncludesTab) {
+      hw = Math.max(hw, p.width / 2);
+      hh = Math.max(hh, p.height / 2);
+    }
+    return { hw, hh };
+  };
+  const bodyBox = (sx, sy, expanded = false) => {
+    const { hw, hh } = halfBox(sx, sy, expanded);
     return { x0: -hw, x1: hw, y0: -hh, y1: hh };
   };
-  const overall = (sx, sy, hole) => {
-    const b = bodyBox(sx, sy);
+  const overall = (sx, sy, hole, expanded = false) => {
+    const b = bodyBox(sx, sy, expanded);
     if (hole) {
       b.x0 = Math.min(b.x0, hole.cx - hole.Rt);
       b.x1 = Math.max(b.x1, hole.cx + hole.Rt);
@@ -271,7 +378,13 @@ export function buildKeychain(font, params) {
     return b;
   };
   // The box the requested width x height applies to.
-  const sizing = (sx, sy, hole) => (p.sizeIncludesTab ? overall(sx, sy, hole) : bodyBox(sx, sy));
+  const sizing = (sx, sy, hole, expanded = false) => (p.sizeIncludesTab ? overall(sx, sy, hole, expanded) : bodyBox(sx, sy, expanded));
+  // What the key hole slides along, for a rectangle base: the plate's edge.
+  const plateFor = (sx, sy, expanded) => {
+    if (!plateMode) return null;
+    const { hw, hh } = halfBox(sx, sy, expanded);
+    return { ring: plateRing(hw, hh, p.plateRadius), margin: Math.min(hw - (ink.w * sx) / 2, hh - (ink.h * sy) / 2) };
+  };
   const solve = (extraW, extraH) => {
     let sx = (p.width - extraW) / ink.w;
     let sy = (p.height - extraH) / ink.h;
@@ -286,7 +399,7 @@ export function buildKeychain(font, params) {
     sx = Math.max(sx, MIN_SCALE);
     sy = Math.max(sy, MIN_SCALE);
     // The tab only matters for sizing when the size is meant to include it.
-    const hole = p.holeEnabled && p.sizeIncludesTab ? placeHole(scaledCoarse(sx, sy), p) : null;
+    const hole = p.holeEnabled && p.sizeIncludesTab ? placeHole(scaledCoarse(sx, sy), p, plateFor(sx, sy, false)) : null;
     const b = sizing(sx, sy, hole);
     const [nsx, nsy] = solve(b.x1 - b.x0 - ink.w * sx, b.y1 - b.y0 - ink.h * sy);
     const done = Math.abs(nsx - sx) < 1e-5 && Math.abs(nsy - sy) < 1e-5;
@@ -307,10 +420,10 @@ export function buildKeychain(font, params) {
   // Final placement with the fine-flattened outlines.
   const centered = transformContours(raw, sx, sy, -ink.cx * sx, -ink.cy * sy);
   let fine = centered.map((c) => flattenContour(c, FLATTEN_TOL));
-  let hole = p.holeEnabled ? placeHole(fine, p) : null;
-  const ref = sizing(sx, sy, hole);
+  let hole = p.holeEnabled ? placeHole(fine, p, plateFor(sx, sy, true)) : null;
+  const ref = sizing(sx, sy, hole, true);
   const shx = -(ref.x0 + ref.x1) / 2, shy = -(ref.y0 + ref.y1) / 2;
-  const b = overall(sx, sy, hole);
+  const b = overall(sx, sy, hole, true);
 
   const contours = transformContours(centered, 1, 1, shx, shy);
   fine = fine.map((pl) => pl.map(([x, y]) => [x + shx, y + shy]));
@@ -330,37 +443,76 @@ export function buildKeychain(font, params) {
   const textPolys = treeToPolys(inkTree);
   // The outline layer stays a pure offset of the text; only the base gets fillets.
   const midPolys = simplifyPolys(treeToPolys(offsetTree(inkPaths, p.outline)));
-  const baseTree = offsetTree(inkPaths, M);
-  let basePaths = p.fillGaps ? outerPaths(baseTree) : allPaths(baseTree);
+  let basePaths;
+  if (plateMode) {
+    const { hw, hh } = halfBox(sx, sy, true);
+    basePaths = roundPaths([rectPath(shx, shy, hw, hh)], 0, Math.min(p.plateRadius, hw, hh));
+  } else {
+    const baseTree = offsetTree(inkPaths, M);
+    basePaths = p.fillGaps ? outerPaths(baseTree) : allPaths(baseTree);
+  }
   // Join the key hole tab on before rounding, so the fillets blend it into the body.
   if (hole) {
     basePaths = allPaths(runClipper(CL.ClipType.ctUnion, basePaths, [toPath(circlePoints(hole.cx, hole.cy, hole.Rt))]));
   }
   basePaths = roundPaths(basePaths, p.roundIn, p.roundOut);
   // A tab sitting in a notch can trap a little pocket; a solid base shouldn't keep it.
-  if (p.fillGaps) basePaths = outerPaths(unionTree(basePaths));
+  if (p.fillGaps || p.baseShape === 'plate') basePaths = outerPaths(unionTree(basePaths));
   // basePlain has the tab but no hole (the STEP export bores an exact hole);
   // basePolys has the hole cut as a polygon, for the preview and STL.
   const basePlain = simplifyPolys(treeToPolys(unionTree(basePaths)));
   let basePolys = basePlain;
+  let basePunchedPaths = basePaths;
   if (hole) {
     const punched = runClipper(CL.ClipType.ctDifference, basePaths, [toPath(circlePoints(hole.cx, hole.cy, hole.R))]);
     basePolys = simplifyPolys(treeToPolys(punched));
+    basePunchedPaths = allPaths(punched);
   }
 
   const width = b.x1 - b.x0, height = b.y1 - b.y0;
   const z1 = p.baseH, z2 = p.baseH + p.midH, z3 = p.baseH + p.midH + p.textH;
+
+  // Optional QR code on the back: a light plate recessed flush into the underside of the base.
+  let qr = null;
+  let qrLayer = null;
+  let baseLayers = [{ key: 'base', name: 'Base', polys: basePolys, z0: 0, z1 }];
+  let baseLowerPlain = null;
+  if (p.qrEnabled && p.qrText.trim()) {
+    try {
+      const code = makeQr(p.qrText, p.qrEcc);
+      const depth = Math.max(0.2, Math.min(p.qrDepth, p.baseH - 0.2));
+      // Centre on the body (the tab, if any, sticks out beyond it).
+      const laid = layoutQr(code, basePunchedPaths, shx, shy, p, warnings);
+      if (laid) {
+        // (Only collinear vertices are dropped: the QR's features are tiny and rectilinear.)
+        const lightPolys = dropCollinear(treeToPolys(unionTree(laid.light)));
+        const lowerPolys = dropCollinear(treeToPolys(runClipper(CL.ClipType.ctDifference, basePunchedPaths, laid.light)));
+        baseLowerPlain = dropCollinear(treeToPolys(runClipper(CL.ClipType.ctDifference, basePaths, laid.light)));
+        baseLayers = [
+          { key: 'base', name: 'Base', polys: lowerPolys, z0: 0, z1: depth },
+          { key: 'base', name: 'Base', polys: basePolys, z0: depth, z1 },
+        ];
+        qrLayer = { key: 'qr', name: 'QR code', polys: lightPolys, z0: 0, z1: depth };
+        qr = { n: laid.n, cells: laid.cells, module: laid.module, side: laid.side, depth, ecc: p.qrEcc, cx: shx, cy: shy };
+      }
+    } catch (err) {
+      warnings.push(`Can't make that QR code: ${err.message || err}. Try shorter text or lower error correction.`);
+    }
+  }
+
   return {
     params: p,
     size: { w: width, h: height, d: z3 },
     scale: { x: sx, y: sy },
     layers: [
-      { key: 'base', name: 'Base', polys: basePolys, z0: 0, z1 },
+      ...baseLayers,
       { key: 'outline', name: 'Outline', polys: midPolys, z0: z1, z1: z2 },
       { key: 'text', name: 'Text', polys: textPolys, z0: z2, z1: z3 },
+      ...(qrLayer ? [qrLayer] : []),
     ],
+    qr,
     // Extras the STEP export uses to build exact curves and a true circular hole.
-    exact: { contours, basePlain, hole, holeTrack: holeTrackShifted },
+    exact: { contours, basePlain, baseLowerPlain, hole, holeTrack: holeTrackShifted },
     warnings,
   };
 }

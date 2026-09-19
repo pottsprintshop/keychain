@@ -35,8 +35,9 @@ export const DEFAULTS = {
   holeDia: 4.2,
   holeEdge: 2.0, // material between the hole and the outside edge of the base
   holeGap: 1.0, // clearance between the hole and the outline layer
-  holeSide: 'left',
-  holePos: 0.3, // 0..1 along the chosen edge (top->bottom, or left->right)
+  holeAngle: 180, // where around the keychain the hole sits, degrees: 0 = right, 90 = top, 180 = left (centered), 270 = bottom
+  holePush: 0, // 0..1: how far the tab sticks out past its snug position
+  lineShifts: [], // per-line sideways nudge, % of the widest line
 };
 
 // ---- Clipper helpers -------------------------------------------------------
@@ -160,77 +161,84 @@ export function circlePoints(cx, cy, r, tol = 0.005) {
 
 // ---- Key hole placement -----------------------------------------------------
 
-function toSegments(polylines) {
-  let count = 0;
-  for (const pl of polylines) count += pl.length;
-  const segs = new Float64Array(count * 4);
-  let k = 0;
-  for (const pl of polylines) {
-    for (let i = 0, n = pl.length; i < n; i++) {
-      const a = pl[i], b = pl[(i + 1) % n];
-      segs[k++] = a[0]; segs[k++] = a[1]; segs[k++] = b[0]; segs[k++] = b[1];
-    }
-  }
-  return segs;
-}
-
-// True if any segment is closer than r to (px, py).
-function anyCloser(segs, px, py, r) {
-  const r2 = r * r;
-  for (let i = 0; i < segs.length; i += 4) {
-    const ax = segs[i], ay = segs[i + 1];
-    const dx = segs[i + 2] - ax, dy = segs[i + 3] - ay;
-    const len2 = dx * dx + dy * dy;
-    let t = len2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
-    t = t < 0 ? 0 : t > 1 ? 1 : t;
-    const ex = ax + t * dx - px, ey = ay + t * dy - py;
-    if (ex * ex + ey * ey < r2) return true;
-  }
-  return false;
-}
-
-// Slide a hole in from the chosen side until it just clears the outline layer.
-// `polylines` are the (scaled, centered) text outlines. Returns { cx, cy, R, Rt }.
-export function placeHole(polylines, inkW, inkH, p) {
+function holeMetrics(p) {
   const R = p.holeDia / 2;
-  const Rt = R + p.holeEdge;
+  const Rt = R + p.holeEdge; // tab radius
   const M = p.outline + p.baseMargin;
-  // Distance from the hole centre to the text: hole radius + clearance + outline
-  // layer. Capped so the tab still overlaps the base by ~1 mm and stays attached.
-  let need = R + p.holeGap + p.outline;
-  need = Math.max(R + p.outline + 0.1, Math.min(need, Rt + M - 1));
+  // The hole centre must be at least this far from the text so the hole clears the
+  // outline layer, but no further than this or the tab stops overlapping the base.
+  const attachMax = Rt + M - 1;
+  const need = Math.max(R + p.outline + 0.1, Math.min(R + p.holeGap + p.outline, attachMax));
+  return { R, Rt, M, need, reach: Math.max(0, attachMax - need) };
+}
 
-  const segs = toSegments(polylines);
-  const hw = inkW / 2, hh = inkH / 2;
-  const far = Math.max(hw, hh) + M + Rt + need + 10;
-  const pos = Math.min(1, Math.max(0, p.holePos));
-  let dx = 0, dy = 0, sx = 0, sy = 0;
-  switch (p.holeSide) {
-    case 'right': dx = -1; sx = far; sy = hh - pos * inkH; break;
-    case 'top': dy = -1; sx = -hw + pos * inkW; sy = far; break;
-    case 'bottom': dy = 1; sx = -hw + pos * inkW; sy = -far; break;
-    default: dx = 1; sx = -far; sy = hh - pos * inkH; // left
-  }
+// The curve the hole centre slides along: the text pushed out by `need` (outer edge only),
+// oriented clockwise so the outside is on the left of the direction of travel.
+function holeTrack(polylines, need) {
+  const paths = allPaths(unionTree(polylines.map(toPath)));
+  return offsetTree(paths, need)
+    .Childs()
+    .map((n) => fromPath(n.Contour()))
+    .map((ring) => (polyArea(ring) > 0 ? [...ring].reverse() : ring));
+}
 
-  const step = 0.25;
-  let lo = 0, hi = -1;
-  for (let t = 0; t <= far * 2; t += step) {
-    if (anyCloser(segs, sx + dx * t, sy + dy * t, need)) { hi = t; break; }
-    lo = t;
-  }
-  let t;
-  if (hi < 0) {
-    // Nothing on this line: rest the hole just outside the text's bounding box.
-    t = far - (dx !== 0 ? hw : hh) - need;
-  } else {
-    for (let i = 0; i < 12; i++) {
-      const mid = (lo + hi) / 2;
-      if (anyCloser(segs, sx + dx * mid, sy + dy * mid, need)) hi = mid;
-      else lo = mid;
+// Farthest crossing of the ray (cx,cy)+t(dx,dy) with any ring: { t, x, y, ex, ey } or null.
+function rayHit(rings, cx, cy, dx, dy) {
+  let best = null;
+  for (const ring of rings) {
+    for (let i = 0, n = ring.length; i < n; i++) {
+      const [ax, ay] = ring[i], [bx, by] = ring[(i + 1) % n];
+      const ex = bx - ax, ey = by - ay;
+      const den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-12) continue;
+      const t = ((ax - cx) * ey - (ay - cy) * ex) / den;
+      const u = ((ax - cx) * dy - (ay - cy) * dx) / den;
+      if (t >= 0 && u >= 0 && u <= 1 && (!best || t > best.t)) best = { t, x: cx + dx * t, y: cy + dy * t, ex, ey };
     }
-    t = lo;
   }
-  return { cx: sx + dx * t, cy: sy + dy * t, R, Rt, need };
+  return best;
+}
+
+// Slide the hole to the requested angle around the text. `polylines` are the text
+// outlines (any frame). Returns { cx, cy, R, Rt, need }.
+export function placeHole(polylines, p) {
+  const h = holeMetrics(p);
+  const bb = bboxOfPolylines(polylines);
+  const a = (p.holeAngle * Math.PI) / 180;
+  const dx = Math.cos(a), dy = Math.sin(a);
+  const rings = holeTrack(polylines, h.need);
+  const hit = rayHit(rings, bb.cx, bb.cy, dx, dy);
+  let cx, cy;
+  if (hit) {
+    const len = Math.hypot(hit.ex, hit.ey) || 1;
+    const push = Math.min(1, Math.max(0, p.holePush)) * h.reach;
+    cx = hit.x + (-hit.ey / len) * push; // outward normal of a clockwise ring
+    cy = hit.y + (hit.ex / len) * push;
+  } else {
+    cx = bb.cx + dx * (bb.w / 2 + h.need);
+    cy = bb.cy + dy * (bb.h / 2 + h.need);
+  }
+  return { cx, cy, R: h.R, Rt: h.Rt, need: h.need, track: { rings, cx: bb.cx, cy: bb.cy } };
+}
+
+// The angle (degrees) that puts the hole on the given side at `frac` of the way down
+// the track (0 = top, 1 = bottom). Used by the 20% / 50% / 80% height buttons.
+export function angleForHeight(track, side, frac) {
+  let y0 = Infinity, y1 = -Infinity;
+  for (const ring of track.rings) for (const [, y] of ring) { y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  const y = y1 - Math.min(1, Math.max(0, frac)) * (y1 - y0);
+  let x = null;
+  for (const ring of track.rings) {
+    for (let i = 0, n = ring.length; i < n; i++) {
+      const [ax, ay] = ring[i], [bx, by] = ring[(i + 1) % n];
+      if (ay === by || (ay - y) * (by - y) > 0) continue;
+      const cx = ax + ((y - ay) / (by - ay)) * (bx - ax);
+      if (x === null || (side === 'left' ? cx < x : cx > x)) x = cx;
+    }
+  }
+  if (x === null) return side === 'left' ? 180 : 0;
+  const deg = (Math.atan2(y - track.cy, x - track.cx) * 180) / Math.PI;
+  return Math.round((deg + 360) % 360);
 }
 
 // ---- Fit + build ------------------------------------------------------------
@@ -277,7 +285,8 @@ export function buildKeychain(font, params) {
   for (let it = 0; it < 8; it++) {
     sx = Math.max(sx, MIN_SCALE);
     sy = Math.max(sy, MIN_SCALE);
-    const hole = p.holeEnabled ? placeHole(scaledCoarse(sx, sy), ink.w * sx, ink.h * sy, p) : null;
+    // The tab only matters for sizing when the size is meant to include it.
+    const hole = p.holeEnabled && p.sizeIncludesTab ? placeHole(scaledCoarse(sx, sy), p) : null;
     const b = sizing(sx, sy, hole);
     const [nsx, nsy] = solve(b.x1 - b.x0 - ink.w * sx, b.y1 - b.y0 - ink.h * sy);
     const done = Math.abs(nsx - sx) < 1e-5 && Math.abs(nsy - sy) < 1e-5;
@@ -298,14 +307,22 @@ export function buildKeychain(font, params) {
   // Final placement with the fine-flattened outlines.
   const centered = transformContours(raw, sx, sy, -ink.cx * sx, -ink.cy * sy);
   let fine = centered.map((c) => flattenContour(c, FLATTEN_TOL));
-  let hole = p.holeEnabled ? placeHole(fine, ink.w * sx, ink.h * sy, p) : null;
+  let hole = p.holeEnabled ? placeHole(fine, p) : null;
   const ref = sizing(sx, sy, hole);
   const shx = -(ref.x0 + ref.x1) / 2, shy = -(ref.y0 + ref.y1) / 2;
   const b = overall(sx, sy, hole);
 
   const contours = transformContours(centered, 1, 1, shx, shy);
   fine = fine.map((pl) => pl.map(([x, y]) => [x + shx, y + shy]));
-  if (hole) hole = { ...hole, cx: hole.cx + shx, cy: hole.cy + shy };
+  let holeTrackShifted = null;
+  if (hole) {
+    holeTrackShifted = {
+      rings: hole.track.rings.map((r) => r.map(([x, y]) => [x + shx, y + shy])),
+      cx: hole.track.cx + shx,
+      cy: hole.track.cy + shy,
+    };
+    hole = { cx: hole.cx + shx, cy: hole.cy + shy, R: hole.R, Rt: hole.Rt, need: hole.need };
+  }
 
   // Layer outlines.
   const inkTree = unionTree(fine.map(toPath));
@@ -320,6 +337,8 @@ export function buildKeychain(font, params) {
     basePaths = allPaths(runClipper(CL.ClipType.ctUnion, basePaths, [toPath(circlePoints(hole.cx, hole.cy, hole.Rt))]));
   }
   basePaths = roundPaths(basePaths, p.roundIn, p.roundOut);
+  // A tab sitting in a notch can trap a little pocket; a solid base shouldn't keep it.
+  if (p.fillGaps) basePaths = outerPaths(unionTree(basePaths));
   // basePlain has the tab but no hole (the STEP export bores an exact hole);
   // basePolys has the hole cut as a polygon, for the preview and STL.
   const basePlain = simplifyPolys(treeToPolys(unionTree(basePaths)));
@@ -341,7 +360,7 @@ export function buildKeychain(font, params) {
       { key: 'text', name: 'Text', polys: textPolys, z0: z2, z1: z3 },
     ],
     // Extras the STEP export uses to build exact curves and a true circular hole.
-    exact: { contours, basePlain, hole },
+    exact: { contours, basePlain, hole, holeTrack: holeTrackShifted },
     warnings,
   };
 }

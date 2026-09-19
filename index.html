@@ -43,6 +43,10 @@
         <label for="lineSpacing">Line spacing <span id="lineSpacingVal"></span></label>
         <input type="range" id="lineSpacing" min="0.5" max="1.6" step="0.05" value="1">
       </div>
+      <div id="lineShifts" hidden>
+        <p class="hint">Nudge each line left or right (percent of the widest line).</p>
+        <div id="lineShiftList"></div>
+      </div>
     </section>
 
     <section class="panel">
@@ -113,18 +117,31 @@
         <div class="fields">
           <label>Diameter (mm) <input type="number" id="holeDia" min="0.5" step="0.1"></label>
           <label>Edge distance (mm) <input type="number" id="holeEdge" min="0.5" step="0.1"></label>
-          <label>Side
-            <select id="holeSide">
-              <option value="left" selected>Left</option>
-              <option value="right">Right</option>
-              <option value="top">Top</option>
-              <option value="bottom">Bottom</option>
-            </select>
-          </label>
         </div>
         <div class="control-row">
-          <label for="holePos">Position <span id="holePosVal"></span></label>
-          <input type="range" id="holePos" min="0" max="100" step="1" value="30">
+          <label>Put it on the</label>
+          <div class="scale-buttons" id="holeQuick">
+            <button type="button" class="scale-btn" data-angle="180">Left</button>
+            <button type="button" class="scale-btn" data-angle="90">Top</button>
+            <button type="button" class="scale-btn" data-angle="0">Right</button>
+            <button type="button" class="scale-btn" data-angle="270">Bottom</button>
+          </div>
+        </div>
+        <div class="control-row">
+          <label for="holeAngle">Around the edge <span id="holeAngleVal"></span></label>
+          <input type="range" id="holeAngle" min="0" max="360" step="1" value="180">
+        </div>
+        <div class="control-row">
+          <label>Height <span class="dim">from the top</span></label>
+          <div class="scale-buttons" id="holeHeights">
+            <button type="button" class="scale-btn" data-h="20">20%</button>
+            <button type="button" class="scale-btn" data-h="50">50%</button>
+            <button type="button" class="scale-btn" data-h="80">80%</button>
+          </div>
+        </div>
+        <div class="control-row">
+          <label for="holePush">Sticks out <span id="holePushVal"></span></label>
+          <input type="range" id="holePush" min="0" max="100" step="1" value="0">
         </div>
         <details class="nerd-menu">
           <summary>Nerd Shite</summary>

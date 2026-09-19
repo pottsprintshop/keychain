@@ -23,7 +23,8 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
 
 ## Controls
 
-- **Text** — multi-line (Enter starts a new line), alignment, line spacing.
+- **Text** — multi-line (Enter starts a new line), alignment, line spacing, and a sideways
+  offset slider for each line.
 - **Font** — the bundled fonts (see `fonts/fonts.json`), or **Upload font…** (TTF / OTF / WOFF)
   for the current session only.
 - **Size** — width and height in inches or mm. *Keep font proportions* fits the text inside the
@@ -33,8 +34,11 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   *Solid base* fills the gaps between letters. *Blend inside corners* / *Round outside corners*
   put fillets on the base (default 1 mm blend where the key hole tab joins the body); the outline
   and text are never altered.
-- **Key hole** — diameter, edge distance, side, position along the edge. *Nerd Shite* has the gap
-  between the hole and the outline layer.
+- **Key hole** — diameter, edge distance, and where it sits: quick Left / Top / Right / Bottom
+  buttons, an *Around the edge* slider that slides it smoothly all the way around the keychain
+  (180° = centered on the left), 20% / 50% / 80% height buttons, and *Sticks out* to pull it
+  further from the text. *Nerd Shite* has
+  the gap between the hole and the outline layer.
 - **Preview** — live 3D view (Top / 3D, drag to rotate, scroll to zoom).
 
 ## Exports

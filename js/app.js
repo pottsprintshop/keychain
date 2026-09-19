@@ -1,5 +1,5 @@
 import { parseFont, fontDisplayName } from './layout.js';
-import { buildKeychain, DEFAULTS } from './geometry.js';
+import { buildKeychain, angleForHeight, DEFAULTS } from './geometry.js';
 import { createPreview } from './preview.js';
 import { stlFromGeometry, zipStore, downloadBlob, slug } from './exporters.js';
 
@@ -14,7 +14,8 @@ const el = {
   fillGaps: $('fillGaps'), roundIn: $('roundIn'), roundOut: $('roundOut'),
   colorText: $('colorText'), colorOutline: $('colorOutline'), colorBase: $('colorBase'),
   holeEnabled: $('holeEnabled'), holeControls: $('holeControls'), holeDia: $('holeDia'), holeEdge: $('holeEdge'),
-  holeGap: $('holeGap'), holeSide: $('holeSide'), holePos: $('holePos'), holePosVal: $('holePosVal'),
+  holeGap: $('holeGap'), holeAngle: $('holeAngle'), holeAngleVal: $('holeAngleVal'), holePush: $('holePush'), holePushVal: $('holePushVal'),
+  holeQuick: $('holeQuick'), holeHeights: $('holeHeights'), lineShifts: $('lineShifts'), lineShiftList: $('lineShiftList'),
   viewTop: $('viewTop'), view3d: $('view3d'), preview: $('preview'), status: $('status'),
   format: $('format'), downloadBtn: $('downloadBtn'), exportInfo: $('exportInfo'),
 };
@@ -24,6 +25,7 @@ let model = null;
 let prevUnit = el.unit.value;
 let timer = null;
 let preview = null;
+let lineShifts = []; // sideways nudge per text line (percent), indexed by line number
 
 // ---- Reading the form --------------------------------------------------------
 
@@ -54,8 +56,9 @@ function readParams() {
     holeDia: num(el.holeDia, DEFAULTS.holeDia, 0.5),
     holeEdge: num(el.holeEdge, DEFAULTS.holeEdge, 0.5),
     holeGap: num(el.holeGap, DEFAULTS.holeGap, 0),
-    holeSide: el.holeSide.value,
-    holePos: num(el.holePos, 30, 0) / 100,
+    holeAngle: num(el.holeAngle, DEFAULTS.holeAngle, 0),
+    holePush: num(el.holePush, 0, 0) / 100,
+    lineShifts: lineShifts.slice(),
   };
 }
 
@@ -67,8 +70,11 @@ function fmtSize(w, h, unit) {
 
 function syncLabels() {
   el.lineSpacingVal.textContent = Number(el.lineSpacing.value).toFixed(2) + '×';
-  const from = el.holeSide.value === 'top' || el.holeSide.value === 'bottom' ? 'from left' : 'from top';
-  el.holePosVal.textContent = `${el.holePos.value}% ${from}`;
+  const angle = Number(el.holeAngle.value);
+  const compass = ['right', 'top right', 'top', 'top left', 'left', 'bottom left', 'bottom', 'bottom right'];
+  el.holeAngleVal.textContent = `${angle}° · ${compass[Math.round(angle / 45) % 8]}`;
+  el.holePushVal.textContent = `${el.holePush.value}%`;
+  for (const b of el.holeQuick.children) b.classList.toggle('active', Number(b.dataset.angle) === angle);
   el.holeControls.style.opacity = el.holeEnabled.checked ? '1' : '0.45';
 }
 
@@ -112,6 +118,73 @@ function schedule() {
   syncLabels();
   clearTimeout(timer);
   timer = setTimeout(rebuild, 60);
+}
+
+// ---- Per-line offsets ---------------------------------------------------------------
+
+function renderLineShifts() {
+  const lines = el.text.value.replace(/\r/g, '').split('\n');
+  const used = lines.map((text, i) => [text.trim(), i]).filter(([text]) => text);
+  el.lineShifts.hidden = used.length < 2;
+  el.lineShiftList.replaceChildren();
+  if (used.length < 2) return;
+  for (const [text, i] of used) {
+    const row = document.createElement('div');
+    row.className = 'control-row shift-row';
+    const label = document.createElement('label');
+    label.append(`Line ${i + 1} `);
+    const name = document.createElement('em');
+    name.textContent = text.length > 14 ? text.slice(0, 13) + '\u2026' : text;
+    const value = document.createElement('span');
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.min = '-50';
+    range.max = '50';
+    range.step = '1';
+    range.value = String(lineShifts[i] || 0);
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'secondary tiny';
+    reset.textContent = '\u21ba';
+    reset.title = 'Reset this line';
+    reset.setAttribute('aria-label', `Reset line ${i + 1}`);
+    const show = () => (value.textContent = `${Number(range.value) > 0 ? '+' : ''}${range.value}%`);
+    show();
+    range.addEventListener('input', () => {
+      lineShifts[i] = Number(range.value);
+      show();
+      schedule();
+    });
+    reset.addEventListener('click', () => {
+      range.value = '0';
+      lineShifts[i] = 0;
+      show();
+      schedule();
+    });
+    label.append(name, ' ', value);
+    row.append(label, range, reset);
+    el.lineShiftList.append(row);
+  }
+}
+
+for (const b of el.holeQuick.children) {
+  b.addEventListener('click', () => {
+    el.holeAngle.value = b.dataset.angle;
+    schedule();
+  });
+}
+
+// 20% / 50% / 80% height: keep the ring on the left or right side and slide it to that height.
+for (const b of el.holeHeights.children) {
+  b.addEventListener('click', () => {
+    if (timer) rebuild();
+    const track = model && model.exact.holeTrack;
+    if (!track) return;
+    const angle = Number(el.holeAngle.value);
+    const side = angle < 90 || angle > 270 ? 'right' : 'left';
+    el.holeAngle.value = angleForHeight(track, side, Number(b.dataset.h) / 100);
+    schedule();
+  });
 }
 
 // ---- Fonts -----------------------------------------------------------------------
@@ -227,7 +300,8 @@ function initForm() {
   for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap']) {
     el[key].value = DEFAULTS[key];
   }
-  el.holePos.value = Math.round(DEFAULTS.holePos * 100);
+  el.holeAngle.value = DEFAULTS.holeAngle;
+  el.holePush.value = Math.round(DEFAULTS.holePush * 100);
 }
 
 async function init() {
@@ -245,8 +319,9 @@ async function init() {
   const live = [
     el.text, el.font, el.align, el.lineSpacing, el.width, el.height, el.fit, el.sizeIncludesTab,
     el.textH, el.midH, el.baseH, el.outline, el.baseMargin, el.fillGaps, el.roundIn, el.roundOut,
-    el.holeEnabled, el.holeDia, el.holeEdge, el.holeGap, el.holeSide, el.holePos,
+    el.holeEnabled, el.holeDia, el.holeEdge, el.holeGap, el.holeAngle, el.holePush,
   ];
+  el.text.addEventListener('input', renderLineShifts);
   for (const input of live) input.addEventListener('input', schedule);
   for (const input of [el.colorText, el.colorOutline, el.colorBase]) {
     input.addEventListener('input', () => preview.setColors(colors()));
@@ -256,6 +331,7 @@ async function init() {
   el.format.addEventListener('change', updateDownloadLabel);
   el.downloadBtn.addEventListener('click', download);
   updateDownloadLabel();
+  renderLineShifts();
   rebuild();
   window.__kc = { rebuild, preview, get model() { return model; }, el };
 }

@@ -20,15 +20,18 @@ export function fontDisplayName(font) {
 }
 
 // Lay out `text` (newlines split lines) and return unscaled contours.
-export function layoutText(font, text, { align = 'center', lineSpacing = 1 } = {}) {
+// lineShifts[i] nudges line i sideways, as a percentage of the widest line.
+export function layoutText(font, text, { align = 'center', lineSpacing = 1, lineShifts = [] } = {}) {
   const lines = String(text).replace(/\r/g, '').split('\n');
   const lineHeight = NOMINAL * lineSpacing;
   const contours = [];
+  const widest = Math.max(1, ...lines.map((l) => (l.trim() ? font.getAdvanceWidth(l, NOMINAL) : 0)));
 
   lines.forEach((line, i) => {
     if (!line.trim()) return;
     const width = font.getAdvanceWidth(line, NOMINAL);
-    const x0 = align === 'left' ? 0 : align === 'right' ? -width : -width / 2;
+    const shift = ((Number(lineShifts[i]) || 0) / 100) * widest;
+    const x0 = (align === 'left' ? 0 : align === 'right' ? -width : -width / 2) + shift;
     const baseline = -i * lineHeight;
     const path = font.getPath(line, x0, 0, NOMINAL);
 

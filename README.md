@@ -30,7 +30,9 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   box; *Stretch text to fill* fills it exactly. By default the size is the keychain body and the
   key hole tab sticks out beyond it; tick *Count the key hole tab in the size* to include it.
 - **Layers** — color (preview and STEP), height, and how far the outline / base extend.
-  *Solid base* fills the gaps between letters.
+  *Solid base* fills the gaps between letters. *Blend inside corners* / *Round outside corners*
+  put fillets on the base (default 1 mm blend where the key hole tab joins the body); the outline
+  and text are never altered.
 - **Key hole** — diameter, edge distance, side, position along the edge. *Nerd Shite* has the gap
   between the hole and the outline layer.
 - **Preview** — live 3D view (Top / 3D, drag to rotate, scroll to zoom).

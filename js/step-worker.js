@@ -2,7 +2,7 @@
 // the three bodies as real B-rep solids:
 //   text     exact glyph curves (falls back to polygons if the curves don't check out)
 //   outline  polygon prism
-//   base     polygon prism + exact cylindrical tab, with an exact cylindrical hole
+//   base     polygon prism (tab and fillets included) with an exact cylindrical hole
 // Every "exact" build is checked (valid solid, volume matches the polygons) and
 // silently falls back to the polygon version if it isn't.
 
@@ -116,11 +116,10 @@ function build(model, colors, progress) {
   let baseShape = null;
   const baseH = base.z1 - base.z0;
   try {
-    let shape = prisms(basePlain, base.z0, base.z1);
+    let shape = prisms(basePlain, base.z0, base.z1); // includes the tab and its fillets
     if (hole) {
-      const tab = R.makeCylinder(hole.Rt, baseH, [hole.cx, hole.cy, base.z0], [0, 0, 1]);
       const bore = R.makeCylinder(hole.R, baseH + 2, [hole.cx, hole.cy, base.z0 - 1], [0, 0, 1]);
-      shape = shape.fuse(tab).cut(bore);
+      shape = shape.cut(bore);
     }
     if (isValid(shape) && volumeOk(shape, netArea(base.polys) * baseH, 0.02)) baseShape = shape;
   } catch (e) {

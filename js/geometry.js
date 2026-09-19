@@ -29,6 +29,8 @@ export const DEFAULTS = {
   outline: 0.8, // outline layer extends this far past the text
   baseMargin: 2.0, // base layer extends this far past the outline
   fillGaps: true, // base is a solid silhouette (no see-through counters)
+  roundIn: 1.0, // base: fillet radius on inside (concave) corners, incl. where the key hole tab joins
+  roundOut: 0, // base: rounding radius on outside (convex) corners
   holeEnabled: true,
   holeDia: 4.2,
   holeEdge: 2.0, // material between the hole and the outside edge of the base
@@ -74,6 +76,15 @@ function offsetTree(paths, deltaMM) {
 }
 
 const allPaths = (tree) => CL.Clipper.PolyTreeToPaths(tree);
+
+// Fillets in 2D. Growing then shrinking rounds inside (concave) corners and closes
+// gaps narrower than 2r; shrinking then growing rounds outside (convex) corners.
+function roundPaths(paths, inside, outside) {
+  let cur = paths;
+  if (inside > 0) cur = allPaths(offsetTree(allPaths(offsetTree(cur, inside)), -inside));
+  if (outside > 0) cur = allPaths(offsetTree(allPaths(offsetTree(cur, -outside)), outside));
+  return cur;
+}
 const outerPaths = (tree) => tree.Childs().map((n) => n.Contour());
 
 // PolyTree -> [{ outer, holes }], in mm. Islands inside holes become new entries.
@@ -300,15 +311,21 @@ export function buildKeychain(font, params) {
   const inkTree = unionTree(fine.map(toPath));
   const inkPaths = allPaths(inkTree);
   const textPolys = treeToPolys(inkTree);
+  // The outline layer stays a pure offset of the text; only the base gets fillets.
   const midPolys = simplifyPolys(treeToPolys(offsetTree(inkPaths, p.outline)));
   const baseTree = offsetTree(inkPaths, M);
   let basePaths = p.fillGaps ? outerPaths(baseTree) : allPaths(baseTree);
-  const basePlain = simplifyPolys(treeToPolys(p.fillGaps ? unionTree(basePaths) : baseTree));
-
+  // Join the key hole tab on before rounding, so the fillets blend it into the body.
+  if (hole) {
+    basePaths = allPaths(runClipper(CL.ClipType.ctUnion, basePaths, [toPath(circlePoints(hole.cx, hole.cy, hole.Rt))]));
+  }
+  basePaths = roundPaths(basePaths, p.roundIn, p.roundOut);
+  // basePlain has the tab but no hole (the STEP export bores an exact hole);
+  // basePolys has the hole cut as a polygon, for the preview and STL.
+  const basePlain = simplifyPolys(treeToPolys(unionTree(basePaths)));
   let basePolys = basePlain;
   if (hole) {
-    const merged = allPaths(runClipper(CL.ClipType.ctUnion, basePaths, [toPath(circlePoints(hole.cx, hole.cy, hole.Rt))]));
-    const punched = runClipper(CL.ClipType.ctDifference, merged, [toPath(circlePoints(hole.cx, hole.cy, hole.R))]);
+    const punched = runClipper(CL.ClipType.ctDifference, basePaths, [toPath(circlePoints(hole.cx, hole.cy, hole.R))]);
     basePolys = simplifyPolys(treeToPolys(punched));
   }
 

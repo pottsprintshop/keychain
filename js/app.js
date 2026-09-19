@@ -11,7 +11,7 @@ const el = {
   align: $('align'), lineSpacing: $('lineSpacing'), lineSpacingVal: $('lineSpacingVal'),
   width: $('width'), height: $('height'), unit: $('unit'), fit: $('fit'), sizeIncludesTab: $('sizeIncludesTab'), finalSize: $('finalSize'),
   textH: $('textH'), midH: $('midH'), baseH: $('baseH'), outline: $('outline'), baseMargin: $('baseMargin'),
-  fillGaps: $('fillGaps'),
+  fillGaps: $('fillGaps'), roundIn: $('roundIn'), roundOut: $('roundOut'),
   colorText: $('colorText'), colorOutline: $('colorOutline'), colorBase: $('colorBase'),
   holeEnabled: $('holeEnabled'), holeControls: $('holeControls'), holeDia: $('holeDia'), holeEdge: $('holeEdge'),
   holeGap: $('holeGap'), holeSide: $('holeSide'), holePos: $('holePos'), holePosVal: $('holePosVal'),
@@ -48,6 +48,8 @@ function readParams() {
     outline: num(el.outline, DEFAULTS.outline, 0),
     baseMargin: num(el.baseMargin, DEFAULTS.baseMargin, 0),
     fillGaps: el.fillGaps.checked,
+    roundIn: num(el.roundIn, DEFAULTS.roundIn, 0),
+    roundOut: num(el.roundOut, DEFAULTS.roundOut, 0),
     holeEnabled: el.holeEnabled.checked,
     holeDia: num(el.holeDia, DEFAULTS.holeDia, 0.5),
     holeEdge: num(el.holeEdge, DEFAULTS.holeEdge, 0.5),
@@ -222,7 +224,7 @@ function initForm() {
   el.width.value = +(DEFAULTS.width / k).toFixed(3);
   el.height.value = +(DEFAULTS.height / k).toFixed(3);
   el.width.step = el.height.step = '0.05';
-  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'holeDia', 'holeEdge', 'holeGap']) {
+  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap']) {
     el[key].value = DEFAULTS[key];
   }
   el.holePos.value = Math.round(DEFAULTS.holePos * 100);
@@ -242,7 +244,7 @@ async function init() {
 
   const live = [
     el.text, el.font, el.align, el.lineSpacing, el.width, el.height, el.fit, el.sizeIncludesTab,
-    el.textH, el.midH, el.baseH, el.outline, el.baseMargin, el.fillGaps,
+    el.textH, el.midH, el.baseH, el.outline, el.baseMargin, el.fillGaps, el.roundIn, el.roundOut,
     el.holeEnabled, el.holeDia, el.holeEdge, el.holeGap, el.holeSide, el.holePos,
   ];
   for (const input of live) input.addEventListener('input', schedule);

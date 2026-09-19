@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Keychain Maker</title>
 <link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 </head>
 <body>
 <header>
@@ -13,13 +16,151 @@
 </header>
 
 <main>
-  <section class="panel">
-    <p class="hint">Under construction &mdash; the generator is coming soon.</p>
-  </section>
+  <div class="controls">
+    <section class="panel">
+      <h2>Text</h2>
+      <textarea id="text" rows="2" spellcheck="false" placeholder="Type your text"></textarea>
+      <p class="hint">Press Enter to start a new line.</p>
+
+      <div class="control-row">
+        <label for="font">Font</label>
+        <select id="font"></select>
+      </div>
+      <div class="control-row">
+        <button type="button" id="fontBtn" class="secondary">Upload font&hellip;</button>
+        <input type="file" id="fontFile" accept=".ttf,.otf,.woff" hidden>
+        <span id="fontNote" class="hint">TTF, OTF or WOFF &mdash; used for this session only.</span>
+      </div>
+      <div class="control-row">
+        <label for="align">Align</label>
+        <select id="align">
+          <option value="left">Left</option>
+          <option value="center" selected>Center</option>
+          <option value="right">Right</option>
+        </select>
+      </div>
+      <div class="control-row">
+        <label for="lineSpacing">Line spacing <span id="lineSpacingVal"></span></label>
+        <input type="range" id="lineSpacing" min="0.5" max="1.6" step="0.05" value="1">
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Size</h2>
+      <div class="fields">
+        <label>Width <input type="number" id="width" min="1" step="0.1"></label>
+        <label>Height <input type="number" id="height" min="1" step="0.1"></label>
+        <label>Units
+          <select id="unit">
+            <option value="in" selected>in</option>
+            <option value="mm">mm</option>
+          </select>
+        </label>
+      </div>
+      <div class="control-row">
+        <label for="fit">Fit</label>
+        <select id="fit">
+          <option value="contain" selected>Keep font proportions</option>
+          <option value="stretch">Stretch text to fill</option>
+        </select>
+      </div>
+      <div class="control-row checkbox-row">
+        <label><input type="checkbox" id="sizeIncludesTab"> Count the key hole tab in the size</label>
+      </div>
+      <p class="hint" id="finalSize">&nbsp;</p>
+    </section>
+
+    <section class="panel">
+      <h2>Layers</h2>
+      <p class="hint">Three stacked bodies, so a slicer can give each one its own color.</p>
+      <div class="layer-grid">
+        <span class="lg-head"></span>
+        <span class="lg-head">Color</span>
+        <span class="lg-head">Height (mm)</span>
+        <span class="lg-head">Past layer above (mm)</span>
+
+        <span class="lg-name">Text <em>top</em></span>
+        <input type="color" id="colorText" value="#f3cf1c" aria-label="Text color">
+        <input type="number" id="textH" min="0.1" step="0.1">
+        <span class="lg-none">&mdash;</span>
+
+        <span class="lg-name">Outline <em>middle</em></span>
+        <input type="color" id="colorOutline" value="#d4206a" aria-label="Outline color">
+        <input type="number" id="midH" min="0.1" step="0.1">
+        <input type="number" id="outline" min="0" step="0.1" aria-label="Outline offset">
+
+        <span class="lg-name">Base <em>bottom</em></span>
+        <input type="color" id="colorBase" value="#16161a" aria-label="Base color">
+        <input type="number" id="baseH" min="0.1" step="0.1">
+        <input type="number" id="baseMargin" min="0" step="0.1" aria-label="Base margin">
+      </div>
+      <div class="control-row checkbox-row">
+        <label><input type="checkbox" id="fillGaps" checked> Solid base (fill gaps between letters)</label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Key hole</h2>
+      <div class="control-row checkbox-row">
+        <label><input type="checkbox" id="holeEnabled" checked> Add a key hole</label>
+      </div>
+      <div id="holeControls">
+        <div class="fields">
+          <label>Diameter (mm) <input type="number" id="holeDia" min="0.5" step="0.1"></label>
+          <label>Edge distance (mm) <input type="number" id="holeEdge" min="0.5" step="0.1"></label>
+          <label>Side
+            <select id="holeSide">
+              <option value="left" selected>Left</option>
+              <option value="right">Right</option>
+              <option value="top">Top</option>
+              <option value="bottom">Bottom</option>
+            </select>
+          </label>
+        </div>
+        <div class="control-row">
+          <label for="holePos">Position <span id="holePosVal"></span></label>
+          <input type="range" id="holePos" min="0" max="100" step="1" value="30">
+        </div>
+        <details class="nerd-menu">
+          <summary>Nerd Shite</summary>
+          <div class="fields">
+            <label>Gap to outline layer (mm) <input type="number" id="holeGap" min="0" step="0.1"></label>
+          </div>
+        </details>
+      </div>
+    </section>
+  </div>
+
+  <div class="preview-col">
+    <section class="preview-box">
+      <div class="preview-head">
+        <h2>Preview</h2>
+        <div class="view-buttons">
+          <button type="button" class="scale-btn active" id="viewTop">Top</button>
+          <button type="button" class="scale-btn" id="view3d">3D</button>
+        </div>
+      </div>
+      <div id="preview" class="preview-canvas"></div>
+      <p class="hint" id="status">Loading&hellip;</p>
+    </section>
+
+    <section class="panel">
+      <div class="control-row download-row">
+        <select id="format" aria-label="Export format">
+          <option value="step" selected>STEP (3 bodies)</option>
+          <option value="stl">STL (3 files, zipped)</option>
+        </select>
+        <button id="downloadBtn" type="button" disabled>Download STEP</button>
+      </div>
+      <p class="hint" id="exportInfo"></p>
+    </section>
+  </div>
 </main>
 
 <footer>
   <p>Everything runs in your browser &mdash; nothing is uploaded anywhere.</p>
 </footer>
+
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

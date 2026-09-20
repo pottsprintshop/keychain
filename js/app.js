@@ -46,6 +46,7 @@ function readParams() {
     width: num(el.width, DEFAULTS.width / k, 0.1) * k,
     height: num(el.height, DEFAULTS.height / k, 0.1) * k,
     fit: el.fit.value,
+    textSize: num(el.textSize, 100, 20) / 100,
     sizeIncludesTab: el.sizeIncludesTab.checked,
     textH: num(el.textH, DEFAULTS.textH, 0.05),
     midH: num(el.midH, DEFAULTS.midH, 0.05),
@@ -266,11 +267,12 @@ function renderLineShifts() {
 
     const rx = slider(-SHIFT_X_MAX, SHIFT_X_MAX, lineShifts[i], `Line ${i + 1} left or right`);
     const ry = slider(-SHIFT_Y_MAX, SHIFT_Y_MAX, lineShiftsY[i], `Line ${i + 1} up or down`);
-    const row = (name, range, step) => {
+    const row = (icon, name, range, step) => {
       const r = document.createElement('div');
       r.className = 'slider-row inline';
       const label = document.createElement('label');
-      label.textContent = name;
+      label.textContent = icon;
+      label.title = name;
       const box = document.createElement('input');
       box.type = 'number';
       box.className = 'numval';
@@ -287,9 +289,12 @@ function renderLineShifts() {
       r.append(label, val, range);
       return { row: r, show: pairSliderAndBox(range, box, 1) };
     };
-    const X = row('Left / right', rx, 1);
-    const Y = row('Up / down', ry, 1);
-    block.append(head, X.row, Y.row);
+    const X = row('\u2194', 'Left / right', rx, 1);
+    const Y = row('\u2195', 'Up / down', ry, 1);
+    const pair = document.createElement('div');
+    pair.className = 'shift-pair';
+    pair.append(X.row, Y.row);
+    block.append(head, pair);
     shiftUi.set(i, { rx, ry, show: () => { X.show(); Y.show(); } });
     rx.addEventListener('input', () => {
       lineShifts[i] = Number(rx.value);
@@ -335,6 +340,18 @@ function enableLineDragging() {
     },
   });
 }
+
+// Where the key hole naturally goes depends on the shape: a dog bone hangs from the middle of its top edge (the tab
+// nests between the knobs), everything else from the left. Switching shape moves the hole to the new shape's spot,
+// unless it was moved by hand.
+const HOLE_ANGLE_FOR = { dogbone: 90 };
+const holeAngleFor = (shape) => HOLE_ANGLE_FOR[shape] ?? DEFAULTS.holeAngle;
+let prevShape = el.baseShape.value;
+el.baseShape.addEventListener('change', () => {
+  if (Number(el.holeAngle.value) === holeAngleFor(prevShape)) el.holeAngle.value = holeAngleFor(el.baseShape.value);
+  prevShape = el.baseShape.value;
+  schedule();
+});
 
 for (const b of el.holeQuick.children) {
   b.addEventListener('click', () => {
@@ -462,6 +479,7 @@ function applyFromUrl() {
   lineShiftsY = list(lsy);
   prevUnit = el.unit.value;
   renderLineShifts();
+  el.nerdSize.open = el.fit.value !== 'contain' || el.sizeIncludesTab.checked; // show the folded settings if a link changed them
 }
 
 async function copyLink() {
@@ -763,7 +781,7 @@ async function init() {
   el.viewBack.addEventListener('click', () => setView('back'));
   el.format.addEventListener('change', updateDownloadLabel);
   el.downloadBtn.addEventListener('click', download);
-  sliderBoxes.push(pairSliderAndBox(el.lineSpacing, el.lineSpacingNum, 2), pairSliderAndBox(el.holeAngle, el.holeAngleNum, 0), pairSliderAndBox(el.holePush, el.holePushNum, 0));
+  sliderBoxes.push(pairSliderAndBox(el.lineSpacing, el.lineSpacingNum, 2), pairSliderAndBox(el.textSize, el.textSizeNum, 0), pairSliderAndBox(el.holeAngle, el.holeAngleNum, 0), pairSliderAndBox(el.holePush, el.holePushNum, 0));
   initArt();
   initPrint();
   initBatch();
@@ -773,6 +791,7 @@ async function init() {
   syncLabels();
   defaultState = snapshot(document.querySelector('main')); // (after the form is filled with its defaults)
   applyFromUrl();
+  prevShape = el.baseShape.value;
   el.copyLink.addEventListener('click', copyLink);
   rebuild();
   window.__kc = { rebuild, preview, get model() { return model; }, el, readParams, fonts, colors, printSettings };

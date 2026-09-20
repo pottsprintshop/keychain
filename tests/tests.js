@@ -186,11 +186,31 @@ test('STL bodies are watertight with the right volume (36 configurations)', asyn
   return `${n} configurations`;
 });
 
+test('STL bodies of the round, hexagon and dog bone bases are watertight with the right volume', () => {
+  let n = 0;
+  for (const re of [/Carter/, /Graffiti/]) {
+    for (const shape of ['round', 'hex', 'dogbone']) {
+      for (const back of ['none', 'qr', 'text']) {
+        for (const rings of [1, 3]) {
+          const m = build(font(re), { baseShape: shape, backKind: back, rings, qrText: 'https://x.co/a', backText: 'REX' });
+          for (const f of stlFilesFromModel(m, 't')) {
+            const s = stlStats(f.data), exp = volumeOf(m, f.key);
+            assert(s.open === 0, `${re}/${shape}/${back}/${rings} ${f.key}: ${s.open} open edges`);
+            near(s.vol / exp, 1, 0.001, `${re}/${shape}/${back}/${rings} ${f.key} volume ratio`);
+          }
+          n++;
+        }
+      }
+    }
+  }
+  return `${n} configurations`;
+});
+
 test('the key hole clears the outline all the way around, and the base stays one piece', () => {
   let n = 0;
   for (const re of [/Carter/, /Graffiti/]) {
-    for (const shape of ['text', 'plate']) {
-      for (let angle = 0; angle < 360; angle += 15) {
+    for (const shape of ['text', 'plate', 'round', 'hex', 'dogbone']) {
+      for (let angle = 0; angle < 360; angle += shape === 'text' || shape === 'plate' ? 15 : 30) {
         const m = build(font(re), { baseShape: shape, holeAngle: angle });
         const h = m.exact.hole;
         const text = m.layers.find((l) => l.key === 'text');
@@ -202,6 +222,55 @@ test('the key hole clears the outline all the way around, and the base stays one
     }
   }
   return `${n} placements`;
+});
+
+// Even-odd point-in-polygons test.
+const insidePolys = (x, y, polys) => {
+  let odd = false;
+  for (const ring of ringsOf(polys)) {
+    for (let i = 0, n = ring.length, j = n - 1; i < n; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) odd = !odd;
+    }
+  }
+  return odd;
+};
+
+test('round, hexagon and dog bone bases: fill the size, keep the text inside with the full margin', () => {
+  const f = font(/Carter/);
+  const margin = 0.8 + 2.0; // outline + base margin
+  let n = 0;
+  for (const shape of ['round', 'hex', 'dogbone']) {
+    for (const over of [{}, { fit: 'stretch' }, { text: 'REX', width: 70 }, { text: 'Erich\nDeutsch', width: 50, height: 50 }]) {
+      const m = build(f, { baseShape: shape, holeEnabled: false, ...over });
+      near(m.size.w, over.width || 63.5, 0.05, `${shape} ${JSON.stringify(over)}: width`);
+      near(m.size.h, over.height || 38.1, 0.05, `${shape} ${JSON.stringify(over)}: height`);
+      const base = m.layers.find((l) => l.key === 'base').polys;
+      assert(base.length === 1 && base[0].holes.length === 0, `${shape}: one solid piece`);
+      const text = m.layers.find((l) => l.key === 'text').polys;
+      let worst = Infinity;
+      for (const p of text) {
+        for (const [x, y] of p.outer) {
+          assert(insidePolys(x, y, base), `${shape} ${JSON.stringify(over)}: text sticks out of the base`);
+          worst = Math.min(worst, distToRings(x, y, ringsOf(base)));
+        }
+      }
+      assert(worst >= margin - 0.05, `${shape} ${JSON.stringify(over)}: text is only ${worst.toFixed(2)} mm from the edge (margin ${margin})`);
+      assert(m.warnings.length === 0, `${shape}: ${m.warnings.join(' | ')}`);
+      n++;
+    }
+  }
+  // Counting the key hole tab in the size still comes to exactly the size asked for.
+  for (const shape of ['round', 'hex', 'dogbone']) {
+    const m = build(f, { baseShape: shape, sizeIncludesTab: true });
+    near(m.size.w, 63.5, 0.05, `${shape} with tab: width`);
+    near(m.size.h, 38.1, 0.05, `${shape} with tab: height`);
+  }
+  const wide = build(f, { baseShape: 'dogbone', boneShaft: 0.75 }), thin = build(f, { baseShape: 'dogbone', boneShaft: 0.4 });
+  assert(wide.scale.x > thin.scale.x * 1.2, `a thicker shaft leaves room for bigger text (${wide.scale.x} vs ${thin.scale.x})`);
+  const circle = build(f, { baseShape: 'round', width: 50, height: 50, holeEnabled: false });
+  near(netArea(circle.layers.find((l) => l.key === 'base').polys), Math.PI * 625, 3, 'a round base with equal width and height is a circle');
+  return `${n} designs`;
 });
 
 test('line offsets move a line relative to the others; a frozen layout rebuilds identically', () => {
@@ -249,6 +318,23 @@ test('QR codes decode when read from the back (light on dark, dark on light, pla
         if (m.back.module < 0.8) continue; // too small to print, so not promised to scan
         const d = decodeBack(m, baseColor, backColor, 14, plate);
         assert(d && d.data === url, `${ecc} ${baseColor} plate=${plate}: ${d ? 'decoded ' + JSON.stringify(d.data) : 'did not decode'} for ${JSON.stringify(url)}`);
+        n++;
+      }
+    }
+  }
+  return `${n} decodes`;
+});
+
+test('QR codes decode on round and hexagon bases too', () => {
+  const f = font(/Carter/);
+  let n = 0;
+  for (const shape of ['round', 'hex']) {
+    for (const ecc of ['L', 'M']) {
+      for (const [baseColor, backColor] of [['#16161a', '#f2f2f2'], ['#f2f2f2', '#16161a']]) {
+        const m = build(f, { baseShape: shape, width: 76, height: 66, backKind: 'qr', qrText: 'https://potts.co/inlaws', qrEcc: ecc });
+        assert(m.back && m.back.module >= 0.8, `${shape}: the QR modules are ${m.back && m.back.module}`);
+        const d = decodeBack(m, baseColor, backColor, 14, false);
+        assert(d && d.data === 'https://potts.co/inlaws', `${shape} ${ecc} ${baseColor}: ${d ? 'decoded ' + JSON.stringify(d.data) : 'did not decode'}`);
         n++;
       }
     }
@@ -390,6 +476,8 @@ async function stepCheck(m, label, { maxMB, arcs = true, exactText = false } = {
 }
 test('STEP: default plate with a QR code', () => stepCheck(build(font(/Carter/), { baseShape: 'plate', backKind: 'qr', qrText: URL_MED }), 'plate+QR', { maxMB: 8, exactText: true }), { step: true });
 test('STEP: text-shaped base, 3 rings, back text', () => stepCheck(build(font(/Graffiti/), { text: 'WHOOP\nWHOOP!!', rings: 3, backKind: 'text', backText: 'If found call\n303-555-0100' }), 'graffiti', { maxMB: 12 }), { step: true });
+test('STEP: dog bone base', () => stepCheck(build(font(/Carter/), { baseShape: 'dogbone', text: 'Rex', width: 70 }), 'dogbone', { maxMB: 4, exactText: true }), { step: true });
+test('STEP: hexagon base with a QR code', () => stepCheck(build(font(/Carter/), { baseShape: 'hex', width: 60, height: 52, backKind: 'qr', qrText: 'https://x.co/a' }), 'hex+QR', { maxMB: 6 }), { step: true });
 test('STEP: lines dragged together (overlapping glyphs) keep exact text', () => stepCheck(build(font(/Carter/), { lineShiftsY: [0, 35] }), 'overlap', { maxMB: 4, exactText: true }), { step: true });
 
 // ---- runner ----------------------------------------------------------------------------------------

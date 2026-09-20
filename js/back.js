@@ -49,7 +49,7 @@ function layoutQr(p, basePunchedPaths, body, warnings) {
   if (!(module > 0)) return null;
   if (module < QR_MIN_MODULE) {
     warnings.push(
-      `The QR modules are only ${module.toFixed(2)} mm — too small to print reliably. Use a shorter link, lower error correction, a smaller edge margin, a bigger keychain${p.baseShape === 'plate' ? '' : ', or the Rectangle base shape'}.`,
+      `The QR modules are only ${module.toFixed(2)} mm — too small to print reliably. Use a shorter link, lower error correction, a smaller edge margin, a bigger keychain${p.baseShape === 'text' ? ', or a plate base shape (Rectangle fills the most)' : ''}.`,
     );
   }
 

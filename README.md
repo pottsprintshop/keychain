@@ -35,8 +35,12 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   box; *Stretch text to fill* fills it exactly. By default the size is the keychain body and the
   key hole tab sticks out beyond it; tick *Count the key hole tab in the size* to include it.
 - **Layers** — color (preview and STEP), height, and how far the outline / base extend.
-  *Base shape* is either *Follow the text* or a *Rectangle plate* that fills the whole width × height
-  you set. *Solid base* fills the gaps between letters. *Blend inside corners* / *Round outside corners*
+  *Base shape* is *Follow the text* or a plate that fills the whole width × height you set: *Rectangle*
+  (with a corner radius), *Round / oval* (a circle when width = height), *Hexagon* (points left and right,
+  corners rounded by the same radius) or *Dog bone* (a shaft with two knobs at each end; *Shaft thickness*
+  sets how much room the text gets). On a plate the text is scaled to the biggest size that keeps the full
+  outline + base margin inside the shape, and the key hole slides along the shape's edge (on the dog
+  bone it starts in the notch). *Solid base* fills the gaps between letters. *Blend inside corners* / *Round outside corners*
   put fillets on the base (default 1 mm blend where the key hole tab joins the body); the outline
   and text are never altered.
 - **Key hole** — diameter, edge distance, and where it sits: quick Left / Top / Right / Bottom
@@ -63,7 +67,8 @@ the keychain over like a page and it reads correctly (the pattern is mirrored in
   border, so it reads the usual way.
 - The panel shows the module size. Under 0.8 mm won't print reliably on a 0.4 mm nozzle, and the app
   warns you: shorten the text, use lower error correction, make the keychain bigger, or use the
-  *Rectangle plate* base, which leaves far more room than a base that follows the letters.
+  *Rectangle plate* base, which leaves far more room than a base that follows the letters (Round and
+  Hexagon leave less; the dog bone leaves the least).
 - Verified by decoding the rendered back view with an independent QR reader (URLs, Wi-Fi codes,
   accented and emoji text, at all four error-correction levels, plate and no plate).
 

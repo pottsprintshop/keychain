@@ -275,6 +275,51 @@
         <p class="hint" id="backInfo">Recessed flush into the underside of the base, in a color that contrasts with it: light on a dark base, dark on a light base. Turn the keychain over like a page and it reads correctly. A Rectangle base (under Layers) leaves room for a bigger back. Light-on-dark is a negative image: iPhone Camera and most current Android scanners read a QR code that way, but a few older apps only read dark-on-light; the plate option adds a light square with a border so it reads the usual way.</p>
       </div>
     </section>
+
+    <section class="panel">
+      <h2>Print check</h2>
+      <table class="print-table" id="printTable"></table>
+      <p class="hint" id="printTotal"></p>
+      <ul class="warn-list" id="printWarnings"></ul>
+      <div class="control-row checkbox-row">
+        <label><input type="checkbox" id="showThin" data-static> Show thin spots and gaps in the preview (in red)</label>
+      </div>
+      <div class="fields">
+        <label>Filament density (g/cm&sup3;) <input type="number" id="printDensity" min="0.5" step="0.01" data-static></label>
+        <label>Cost ($/kg) <input type="number" id="printCost" min="0" step="0.5" data-static></label>
+        <label>Waste allowance (%) <input type="number" id="printWaste" min="0" step="1" data-static></label>
+        <label>Layer height (mm) <input type="number" id="printLayer" min="0" step="0.02" data-static></label>
+        <label>Thinnest detail (mm) <input type="number" id="printMin" min="0" step="0.05" data-static></label>
+      </div>
+      <p class="hint">Grams come from the model's volume (PLA density by default); print time isn't estimated. These settings are saved in this browser.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Batch</h2>
+      <p class="hint">Make many keychains at once with the design above. One per line; <strong>|</strong> is a line break; a tab or comma, then the QR (or back) text.</p>
+      <textarea id="batchList" rows="5" spellcheck="false" placeholder="Erich|Deutsch&#10;Colleen|Deutsch,https://example.com/colleen&#10;Grandma" data-static data-noshare></textarea>
+      <div class="control-row">
+        <button type="button" id="batchLoad" class="secondary">Load a CSV&hellip;</button>
+        <input type="file" id="batchFile" accept=".csv,.txt,text/csv,text/plain" hidden data-static data-noshare>
+        <span id="batchCount" class="hint"></span>
+      </div>
+      <div class="fields">
+        <label class="grow">Make
+          <select id="batchFormat" data-static data-noshare>
+            <option value="stl" selected>STL, a folder of files for each keychain</option>
+            <option value="step">STEP (about 10 seconds each)</option>
+            <option value="dxf">DXF for the laser, one file each</option>
+            <option value="svg">SVG for the laser, one file each</option>
+          </select>
+        </label>
+      </div>
+      <div class="control-row">
+        <button type="button" id="batchRun" disabled>Make them all</button>
+        <button type="button" id="batchCancel" class="secondary" hidden>Cancel</button>
+      </div>
+      <progress id="batchProgress" max="100" value="0" hidden></progress>
+      <p class="hint" id="batchStatus"></p>
+    </section>
   </div>
 
   <div class="preview-col">
@@ -296,10 +341,14 @@
         <select id="format" aria-label="Export format">
           <option value="step" selected>STEP</option>
           <option value="stl">STL (zipped)</option>
+          <option value="dxf">DXF (laser)</option>
+          <option value="svg">SVG (laser)</option>
         </select>
         <button id="downloadBtn" type="button" disabled>Download STEP</button>
       </div>
+      <div class="control-row"><button id="copyLink" type="button" class="secondary">Copy link to this design</button></div>
       <p class="hint" id="exportInfo"></p>
+      <p class="hint" id="printSummary"></p>
     </section>
   </div>
 </main>

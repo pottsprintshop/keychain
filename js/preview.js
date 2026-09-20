@@ -117,6 +117,7 @@ export function createPreview(container) {
   }
 
   function setModel(model, colors) {
+    clearOverlay();
     for (const l of layers) {
       group.remove(l.mesh);
       l.geometry.dispose();
@@ -140,6 +141,24 @@ export function createPreview(container) {
     }
   }
 
+  // A thin red overlay just above the text (thin spots and gaps), or none.
+  let overlay = null;
+  function clearOverlay() {
+    if (!overlay) return;
+    group.remove(overlay);
+    overlay.geometry.dispose();
+    overlay.material.dispose();
+    overlay = null;
+  }
+  function setHighlights(polys, z, color) {
+    clearOverlay();
+    if (polys && polys.length) {
+      overlay = new THREE.Mesh(layerGeometry(polys, z, z + 0.1), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 }));
+      group.add(overlay);
+    }
+    render();
+  }
+
   function setColors(colors) {
     for (const l of layers) l.mesh.material.color.set(colors[l.key]);
     render();
@@ -149,6 +168,7 @@ export function createPreview(container) {
     setModel,
     setColors,
     setView: frame,
+    setHighlights,
     enableDrag: (h) => { handlers = h; },
     resize,
     layers: () => layers,

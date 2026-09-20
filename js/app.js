@@ -4,6 +4,10 @@ import { createPreview } from './preview.js';
 import { zipStore, downloadBlob, slug } from './exporters.js';
 import { stlFilesFromModel } from './mesh.js';
 import { loadArtSource, traceArt, drawArtPreview } from './art.js';
+import { estimate, analyze, PRINT_DEFAULTS } from './print.js';
+import { snapshot, diffState, toQuery, parseQuery, applyValues } from './state.js';
+import { parseBatch, runBatch } from './batch.js';
+import { dxfFromModel, svgFromModel } from './laser.js';
 
 const $ = (id) => document.getElementById(id);
 const MM_PER_IN = 25.4;
@@ -163,6 +167,7 @@ function rebuild(fixed = null) {
       el.status.textContent = 'Type some text to see your keychain.';
       el.downloadBtn.disabled = true;
       el.finalSize.textContent = ' ';
+      updatePrint();
       return;
     }
     model = m;
@@ -190,6 +195,8 @@ function rebuild(fixed = null) {
       ? m.warnings.join(' ')
       : `Built in ${Math.round(performance.now() - t0)} ms — drag to rotate, scroll to zoom.`;
     el.downloadBtn.disabled = false;
+    updatePrint(!fixed);
+    if (!fixed) updateUrl();
     void p;
   } catch (err) {
     console.error(err);
@@ -345,6 +352,196 @@ for (const b of el.holeHeights.children) {
   });
 }
 
+// ---- Print check -------------------------------------------------------------------
+
+const PRINT_FIELDS = { density: 'printDensity', costPerKg: 'printCost', waste: 'printWaste', layerHeight: 'printLayer', minDetail: 'printMin' };
+
+function printSettings() {
+  const s = {};
+  for (const [key, id] of Object.entries(PRINT_FIELDS)) s[key] = num(el[id], PRINT_DEFAULTS[key], 0);
+  return s;
+}
+
+function loadPrintPrefs() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem('keychainPrint') || '{}'); } catch (e) { /* no storage: use the defaults */ }
+  for (const [key, id] of Object.entries(PRINT_FIELDS)) el[id].value = Number.isFinite(saved[key]) ? saved[key] : PRINT_DEFAULTS[key];
+}
+
+function savePrintPrefs() {
+  try { localStorage.setItem('keychainPrint', JSON.stringify(printSettings())); } catch (e) { /* no storage */ }
+}
+
+// Estimate and printability warnings for the current model. `heavy: false` skips the (slower) analysis
+// while a line is being dragged.
+function updatePrint(heavy = true) {
+  if (!model) {
+    el.printTable.replaceChildren();
+    el.printTotal.textContent = '';
+    el.printSummary.textContent = '';
+    el.printWarnings.replaceChildren();
+    return;
+  }
+  const s = printSettings();
+  const est = estimate(model, s);
+  const palette = colors();
+  const rows = est.rows.map((r) => {
+    const tr = document.createElement('tr');
+    const name = document.createElement('td');
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = palette[r.key] || 'transparent';
+    name.append(swatch, r.name);
+    const grams = document.createElement('td');
+    grams.textContent = `${r.grams.toFixed(2)} g`;
+    tr.append(name, grams);
+    return tr;
+  });
+  el.printTable.replaceChildren(...rows);
+  el.printTotal.textContent = `Total ${est.total.toFixed(2)} g + ${s.waste}% waste = ${est.billed.toFixed(2)} g, about $${est.cost.toFixed(2)} of filament.`;
+  if (!heavy) return;
+  const result = analyze(model, s);
+  el.printWarnings.replaceChildren(...result.warnings.map((w) => Object.assign(document.createElement('li'), { textContent: w })));
+  el.printSummary.textContent = `About ${est.billed.toFixed(1)} g · $${est.cost.toFixed(2)} in filament` + (result.warnings.length ? ` · ${result.warnings.length} print ${result.warnings.length === 1 ? 'warning' : 'warnings'}` : ' · no print warnings');
+  const danger = getComputedStyle(document.documentElement).getPropertyValue('--danger').trim() || '#ff8c73';
+  preview.setHighlights(el.showThin.checked ? result.overlay : [], model.size.d + 0.02, danger);
+}
+
+function initPrint() {
+  loadPrintPrefs();
+  for (const id of [...Object.values(PRINT_FIELDS), 'showThin']) {
+    el[id].addEventListener('input', () => {
+      savePrintPrefs();
+      updatePrint();
+    });
+  }
+}
+
+// ---- Shareable links ---------------------------------------------------------------
+
+let defaultState = null;
+let urlTimer = null;
+const NOSHARE = ['artMode', 'artLines', 'artShiftX', 'artShiftY', 'artThreshold', 'artDetail', 'artInvert', 'artDenoise', 'showThin', ...Object.values(PRINT_FIELDS)];
+
+const csv = (list) => list.map((v) => +(Number(v) || 0).toFixed(2)).join(',');
+
+// The design as URL parameters: controls that differ from the defaults, plus the font and the per-line nudges.
+function designQuery() {
+  const values = diffState(snapshot(document.querySelector('main')), defaultState);
+  const entry = fonts.get(el.font.value);
+  const first = fonts.get(el.font.options[0] && el.font.options[0].value);
+  if (entry && !el.font.value.startsWith('u:') && entry !== first) values.font = entry.name;
+  if (lineShifts.some(Boolean)) values.lineShifts = csv(lineShifts);
+  if (lineShiftsY.some(Boolean)) values.lineShiftsY = csv(lineShiftsY);
+  return toQuery(values);
+}
+
+function updateUrl() {
+  clearTimeout(urlTimer);
+  urlTimer = setTimeout(() => {
+    try { history.replaceState(null, '', location.pathname + designQuery()); } catch (e) { /* e.g. a sandboxed frame */ }
+  }, 400);
+}
+
+// Apply a link's parameters to the form (before the first build).
+function applyFromUrl() {
+  const values = parseQuery(location.search);
+  if (!Object.keys(values).length) return;
+  const { font, lineShifts: ls, lineShiftsY: lsy, ...controls } = values;
+  applyValues(document.querySelector('main'), controls);
+  if (font) {
+    const opt = [...el.font.options].find((o) => o.textContent === font);
+    if (opt) el.font.value = opt.value;
+  }
+  const list = (s) => String(s || '').split(',').map(Number).filter(Number.isFinite);
+  lineShifts = list(ls);
+  lineShiftsY = list(lsy);
+  prevUnit = el.unit.value;
+  renderLineShifts();
+}
+
+async function copyLink() {
+  const text = location.origin + location.pathname + designQuery();
+  try {
+    await navigator.clipboard.writeText(text);
+    el.exportInfo.textContent = 'Link copied. It recreates this design' + (usesUnsharable() ? ', except the uploaded font or artwork, which stay in your browser.' : '.');
+  } catch (e) {
+    el.exportInfo.textContent = 'Could not copy automatically. The address bar has the link.';
+  }
+}
+
+const usesUnsharable = () => el.font.value.startsWith('u:') || !!art;
+
+// ---- Batch ---------------------------------------------------------------------------
+
+let batchCancelled = false;
+
+function updateBatchCount() {
+  const n = parseBatch(el.batchList.value).length;
+  el.batchCount.textContent = n ? `${n} ${n === 1 ? 'keychain' : 'keychains'}` : '';
+  el.batchRun.disabled = !n || !fonts.get(el.font.value);
+}
+
+async function makeBatch() {
+  const items = parseBatch(el.batchList.value);
+  const entry = fonts.get(el.font.value);
+  if (!items.length || !entry) return;
+  const format = el.batchFormat.value;
+  if (format === 'step' && items.length > 30) {
+    el.batchStatus.textContent = 'STEP batches are limited to 30 keychains (each takes about 10 seconds and 10 MB). Use STL for more.';
+    return;
+  }
+  batchCancelled = false;
+  el.batchRun.disabled = true;
+  el.batchCancel.hidden = false;
+  el.batchProgress.hidden = false;
+  el.batchProgress.value = 0;
+  try {
+    const stepper = format === 'step' ? (await import('./step.js')).buildStep : null;
+    const t0 = performance.now();
+    const { blob, count, problems } = await runBatch({
+      items,
+      font: entry.font,
+      baseParams: readParams(),
+      format,
+      colors: colors(),
+      printSettings: printSettings(),
+      buildStep: stepper,
+      onProgress: (done, total, item) => {
+        el.batchProgress.value = (100 * done) / total;
+        el.batchStatus.textContent = `Making ${done + 1} of ${total}: ${item.text.replace(/\n/g, ' ')}`;
+      },
+      shouldCancel: () => batchCancelled,
+    });
+    if (count || !batchCancelled) downloadBlob(blob, `keychains-${count}-${format}.zip`);
+    el.batchProgress.value = 100;
+    el.batchStatus.textContent =
+      `${batchCancelled ? 'Cancelled after' : 'Done:'} ${count} ${count === 1 ? 'keychain' : 'keychains'} in ${((performance.now() - t0) / 1000).toFixed(1)} s. summary.csv lists sizes, filament and any warnings` +
+      (problems ? ` (${problems} need a look).` : '.');
+  } catch (err) {
+    console.error(err);
+    el.batchStatus.textContent = 'The batch failed: ' + err.message;
+  } finally {
+    el.batchCancel.hidden = true;
+    updateBatchCount();
+  }
+}
+
+function initBatch() {
+  el.batchList.addEventListener('input', updateBatchCount);
+  el.batchLoad.addEventListener('click', () => el.batchFile.click());
+  el.batchFile.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    el.batchList.value = await file.text();
+    e.target.value = '';
+    updateBatchCount();
+  });
+  el.batchRun.addEventListener('click', makeBatch);
+  el.batchCancel.addEventListener('click', () => (batchCancelled = true));
+  updateBatchCount();
+}
+
 // ---- Artwork ---------------------------------------------------------------------
 
 function retraceSoon() {
@@ -489,6 +686,11 @@ async function download() {
       const files = stlFilesFromModel(model, name);
       downloadBlob(zipStore(files), `${name}-stl.zip`);
       el.exportInfo.textContent = `STL zip saved: ${files.length} separate bodies (${files.map((f) => f.key).join(', ')}).`;
+    } else if (el.format.value === 'dxf' || el.format.value === 'svg') {
+      const dxf = el.format.value === 'dxf';
+      const text = dxf ? dxfFromModel(model) : svgFromModel(model, colors());
+      downloadBlob(new Blob([text], { type: dxf ? 'application/dxf' : 'image/svg+xml' }), `${name}.${el.format.value}`);
+      el.exportInfo.textContent = `${dxf ? 'DXF' : 'SVG'} saved: the base (with the key hole) as the cut line, plus each layer's shapes, each on its own ${dxf ? 'layer' : 'group'}.`;
     } else {
       el.exportInfo.textContent = 'Building STEP… the CAD engine is a large one-time download (about 23 MB, cached afterwards).';
       const { buildStep } = await import('./step.js');
@@ -506,7 +708,7 @@ async function download() {
 }
 
 function updateDownloadLabel() {
-  el.downloadBtn.textContent = el.format.value === 'stl' ? 'Download STL' : 'Download STEP';
+  el.downloadBtn.textContent = 'Download ' + (el.format.value === 'stl' ? 'STL' : el.format.value.toUpperCase());
 }
 
 // ---- Init ------------------------------------------------------------------------------
@@ -558,10 +760,17 @@ async function init() {
   el.downloadBtn.addEventListener('click', download);
   sliderBoxes.push(pairSliderAndBox(el.lineSpacing, el.lineSpacingNum, 2), pairSliderAndBox(el.holeAngle, el.holeAngleNum, 0), pairSliderAndBox(el.holePush, el.holePushNum, 0));
   initArt();
+  initPrint();
+  initBatch();
+  for (const id of NOSHARE) el[id].dataset.noshare = '';
   updateDownloadLabel();
   renderLineShifts();
+  syncLabels();
+  defaultState = snapshot(document.querySelector('main')); // (after the form is filled with its defaults)
+  applyFromUrl();
+  el.copyLink.addEventListener('click', copyLink);
   rebuild();
-  window.__kc = { rebuild, preview, get model() { return model; }, el };
+  window.__kc = { rebuild, preview, get model() { return model; }, el, readParams, fonts, colors, printSettings };
 }
 
 function setView(v) {

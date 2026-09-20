@@ -67,13 +67,62 @@ the keychain over like a page and it reads correctly (the pattern is mirrored in
 - Verified by decoding the rendered back view with an independent QR reader (URLs, Wi-Fi codes,
   accented and emoji text, at all four error-correction levels, plate and no plate).
 
+## Artwork
+
+Choose a PNG, JPG or SVG in the **Artwork** panel. It's flattened onto white, thresholded and traced
+with ImageTracer (the same approach as img2cad), so holes are kept and curves stay curves. Threshold,
+detail, invert and noise controls have a live thumbnail. On the front it goes above the text, below it,
+or instead of it (with a height in lines of text and left/right and up/down nudges), and gets its outline
+rings and base like text does. On the back use **Back → The artwork**. Artwork stays in your browser, so
+it can't be part of a shared link.
+
+## Outline rings and the back
+
+**Outline rings** (1 to 3) stack outward from the text, each with its own width, height and color; the base
+and the key hole clearance follow the outermost ring. **Back** puts nothing, a QR code, text, or the
+artwork on the back — always mirrored, recessed flush, sized to fit, in a contrasting color.
+
+## Shareable links
+
+Every design setting is in the URL, so a link recreates the design and a reload restores it. **Copy link to
+this design** copies it. Only values that differ from the defaults are included, keyed by the control's id,
+so a hand- or machine-built link works too:
+
+```
+?text=Erich%0ADeutsch&font=Carter%20One&baseShape=plate&backKind=qr&qrText=https://example.com/erich
+```
+
+(`%0A` is a line break.) Any control id works as a parameter (`width`, `height`, `unit`, `rings`, `colorText`,
+`holeAngle`, ...); ids that don't exist are ignored. Uploaded fonts and artwork stay in the browser, so they
+aren't in a link.
+
+## Batch
+
+The **Batch** panel makes many keychains with the current design: one per line, `|` for a line break, and a
+tab or comma then the QR (or back) text. Paste from a spreadsheet or load a CSV. You get one zip: a folder
+of STL files per keychain (or one STEP / DXF / SVG file each) and a `summary.csv` with sizes, filament
+grams, cost and any warnings. STEP takes about 10 seconds each, so it's limited to 30.
+
+## Print check
+
+Grams of filament per color and in total (density, cost per kg and a waste allowance are adjustable and
+remembered in your browser), plus warnings: details thinner than the nozzle allows, gaps that will fill in,
+tiny pieces, thin rings, a thin wall around the key hole, and heights that aren't layer multiples. **Show
+thin spots** paints them red in the preview. Print time isn't estimated.
+
+## Laser
+
+**DXF (laser)** and **SVG (laser)** export every layer's outlines on their own layer/group, with the base
+(and its key hole) as the cut line. The DXF follows img2cad's writer.
+
 ## Exports
 
-- **STEP (3 or 4 bodies)** — bodies named *Base*, *Outline*, *Text* (and *QR*) with their colors. The letters are
+- **STEP** — bodies named *Base*, *Outline* (each ring), *Text* (and the back) with their colors. The letters are
   true curves and the key hole is an exact cylinder. The outline and base are polygons
   (0.015 mm tolerance), so files run a few MB. The export runs in a Web Worker and loads the CAD
   engine (23 MB raw, about 7 MB gzipped, then cached by the browser) only when you click Download.
-- **STL (zipped)** — one watertight STL per body (3, or 4 with a QR code), in mm, ready to import as parts.
+- **STL (zipped)** — one watertight STL per body, in mm, ready to import as parts. With something recessed
+  into the back, the base is one closed shell.
 
 ## Running it
 
@@ -92,8 +141,14 @@ It publishes as-is with GitHub Pages (Settings → Pages → Deploy from a branc
 index.html, style.css     the page
 js/app.js                 UI and wiring
 js/layout.js              text layout, curve flattening (opentype.js)
-js/geometry.js            fit-to-size, outline/base offsets (Clipper), key hole placement, QR layout
-js/qr.js                  QR encoding (qrcode-generator)
+js/geometry.js            fit-to-size, outline rings/base (Clipper), key hole placement
+js/clip.js                shared 2D helpers (Clipper unions, offsets, fillets)
+js/back.js, js/qr.js      what goes on the back (QR / text / artwork)
+js/art.js                 artwork tracing (ImageTracer) and placement
+js/print.js               filament estimate and printability checks
+js/state.js, js/batch.js  shareable links, batch runs
+js/laser.js               DXF / SVG export
+js/mesh.js                layer meshes and STL packaging
 js/preview.js             three.js preview
 js/exporters.js           binary STL, zip, download
 js/step.js, step-worker.js  STEP export (OpenCascade via replicad) in a Web Worker

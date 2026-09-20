@@ -55,6 +55,9 @@ function readParams() {
     baseMargin: num(el.baseMargin, DEFAULTS.baseMargin, 0),
     fillGaps: el.fillGaps.checked,
     baseShape: el.baseShape.value,
+    baseOn: el.baseOn.value === '1',
+    textOn: el.textOn.value === '1',
+    borderW: num(el.borderW, DEFAULTS.borderW, 0),
     plateRadius: num(el.plateRadius, DEFAULTS.plateRadius, 0),
     boneShaft: num(el.boneShaft, DEFAULTS.boneShaft * 100, 20) / 100,
     roundIn: num(el.roundIn, DEFAULTS.roundIn, 0),
@@ -99,7 +102,7 @@ function syncBackColor() {
 }
 const colors = () => {
   syncBackColor();
-  return {
+  const c = {
     text: el.colorText.value,
     outline: el.colorOutline.value,
     outline2: el.colorOutline2.value,
@@ -107,6 +110,10 @@ const colors = () => {
     base: el.colorBase.value,
     back: el.colorBack.value,
   };
+  // The border is colored like the layer above the base: the outermost outline, or the text if there is none.
+  const n = Number(el.rings.value);
+  c.border = n > 0 ? c[n === 1 ? 'outline' : `outline${n}`] : c.text;
+  return c;
 };
 
 function fmtSize(w, h, unit) {
@@ -149,11 +156,66 @@ function syncLabels() {
   el.qrEccWrap.hidden = kind !== 'qr';
   el.backTextWrap.hidden = kind !== 'text';
   el.backArtNote.hidden = kind !== 'art';
-  for (const r of document.querySelectorAll('.ring-row')) r.hidden = Number(r.dataset.ring) > Number(el.rings.value);
+  syncLayers();
   // The corner radius is for the rectangle and hexagon; the shaft thickness for the dog bone.
   el.plateRadiusWrap.hidden = !['plate', 'hex'].includes(el.baseShape.value);
   el.boneShaftWrap.hidden = el.baseShape.value !== 'dogbone';
 }
+
+// ---- Layers: the plus and minus buttons -------------------------------------------
+
+// The outline rings' controls, nearest the text first: color, height, width.
+const RING_IDS = [['colorOutline', 'midH', 'outline'], ['colorOutline2', 'ring2H', 'ring2W'], ['colorOutline3', 'ring3H', 'ring3W']];
+const MAX_RINGS = 3;
+const ringCount = () => Number(el.rings.value);
+const layerOn = (name) => el[name === 'text' ? 'textOn' : 'baseOn'].value === '1';
+const layersActive = () => (layerOn('text') ? 1 : 0) + ringCount() + (layerOn('base') ? 1 : 0);
+
+// Show the layers that exist, dim the ones taken away (with a green plus to bring them back), and keep at least one.
+function syncLayers() {
+  const rings = ringCount();
+  for (const r of document.querySelectorAll('.ring-row')) r.hidden = Number(r.dataset.ring) > rings;
+  const last = layersActive() <= 1;
+  for (const name of ['text', 'base']) {
+    const on = layerOn(name);
+    for (const cell of document.querySelectorAll(`[data-row="${name}"]`)) {
+      cell.classList.toggle('off', !on);
+      if (cell.tagName === 'INPUT') cell.disabled = !on;
+    }
+    const b = document.querySelector(`.lg-btn[data-layer="${name}"]`);
+    b.classList.toggle('minus', on);
+    b.classList.toggle('plus', !on);
+    b.textContent = on ? '\u2212' : '+';
+    b.disabled = on && last;
+    const label = on ? `Remove the ${name} layer` : `Put the ${name} layer back`;
+    b.title = b.disabled ? 'A keychain needs at least one layer' : label;
+    b.setAttribute('aria-label', b.title);
+  }
+  for (const b of document.querySelectorAll('.lg-btn.minus[data-ring]')) b.disabled = last;
+  el.addRing.disabled = rings >= MAX_RINGS;
+  el.addRingNote.textContent = rings >= MAX_RINGS ? 'Three outline layers is the most.' : 'Add an outline layer around the text.';
+  // With no base there is no key hole, back or border to set up.
+  for (const section of document.querySelectorAll('.needs-base')) section.inert = !layerOn('base');
+  el.advancedLayers.inert = !layerOn('base');
+}
+
+function removeRing(k) {
+  const n = ringCount();
+  for (let i = k; i < n; i++) RING_IDS[i - 1].forEach((id, j) => (el[id].value = el[RING_IDS[i][j]].value)); // the rings outside it move in
+  el.rings.value = String(n - 1);
+}
+
+document.querySelector('#panelLayers').addEventListener('click', (e) => {
+  const b = e.target.closest('.lg-btn');
+  if (!b || b.disabled) return;
+  if (b.id === 'addRing') el.rings.value = String(Math.min(MAX_RINGS, ringCount() + 1));
+  else if (b.dataset.ring) removeRing(Number(b.dataset.ring));
+  else {
+    const flag = el[b.dataset.layer === 'text' ? 'textOn' : 'baseOn'];
+    flag.value = flag.value === '1' ? '0' : '1';
+  }
+  schedule();
+});
 
 // ---- Building ------------------------------------------------------------------
 
@@ -346,11 +408,12 @@ function enableLineDragging() {
 // Where the key hole naturally goes depends on the shape: a dog bone hangs from the middle of its top edge (the tab
 // nests between the knobs), everything else from the left. Switching shape moves the hole to the new shape's spot,
 // unless it was moved by hand.
-const HOLE_ANGLE_FOR = { dogbone: 90 };
-const holeAngleFor = (shape) => HOLE_ANGLE_FOR[shape] ?? DEFAULTS.holeAngle;
+const SHAPE_DEFAULTS = { dogbone: { holeAngle: 90, borderW: 0.8 } }; // (the dog bone also gets a 0.8 mm rim)
+const SHAPE_KEYED = ['holeAngle', 'borderW'];
+const shapeDefault = (shape, key) => SHAPE_DEFAULTS[shape]?.[key] ?? DEFAULTS[key];
 let prevShape = el.baseShape.value;
 el.baseShape.addEventListener('change', () => {
-  if (Number(el.holeAngle.value) === holeAngleFor(prevShape)) el.holeAngle.value = holeAngleFor(el.baseShape.value);
+  for (const key of SHAPE_KEYED) if (Number(el[key].value) === shapeDefault(prevShape, key)) el[key].value = shapeDefault(el.baseShape.value, key);
   prevShape = el.baseShape.value;
   schedule();
 });
@@ -456,8 +519,8 @@ function designQuery() {
   if (entry && !el.font.value.startsWith('u:') && entry !== first) values.font = entry.name;
   if (lineShifts.some(Boolean)) values.lineShifts = csv(lineShifts);
   if (lineShiftsY.some(Boolean)) values.lineShiftsY = csv(lineShiftsY);
-  // A shape whose usual hole spot isn't the default (the dog bone's top edge) always spells the angle out, so its links keep it.
-  if (holeAngleFor(el.baseShape.value) !== DEFAULTS.holeAngle) values.holeAngle = el.holeAngle.value;
+  // A shape whose usual hole spot or border isn't the default (the dog bone's) always spells them out, so its links keep them.
+  for (const key of SHAPE_KEYED) if (shapeDefault(el.baseShape.value, key) !== DEFAULTS[key]) values[key] = el[key].value;
   return toQuery(values);
 }
 
@@ -474,8 +537,8 @@ function applyFromUrl() {
   if (!Object.keys(values).length) return;
   const { font, lineShifts: ls, lineShiftsY: lsy, ...controls } = values;
   applyValues(document.querySelector('main'), controls);
-  // A link that names a shape but not where the hole goes gets that shape's usual spot.
-  if (controls.baseShape && !('holeAngle' in controls)) el.holeAngle.value = String(holeAngleFor(el.baseShape.value));
+  // A link that names a shape but not where the hole goes (or its border) gets that shape's usual ones.
+  if (controls.baseShape) for (const key of SHAPE_KEYED) if (!(key in controls)) el[key].value = String(shapeDefault(el.baseShape.value, key));
   if (font) {
     const opt = [...el.font.options].find((o) => o.textContent === font);
     if (opt) el.font.value = opt.value;
@@ -485,7 +548,7 @@ function applyFromUrl() {
   lineShiftsY = list(lsy);
   prevUnit = el.unit.value;
   renderLineShifts();
-  el.nerdSize.open = el.fit.value !== 'contain' || el.sizeIncludesTab.checked; // show the folded settings if a link changed them
+  el.nerdSize.open = el.fit.value !== 'contain' || !el.sizeIncludesTab.checked; // show the folded settings if a link changed them
 }
 
 async function copyLink() {
@@ -747,7 +810,7 @@ function initForm() {
   el.width.value = +(DEFAULTS.width / k).toFixed(3);
   el.height.value = +(DEFAULTS.height / k).toFixed(3);
   el.width.step = el.height.step = '0.05';
-  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'backDepth', 'backMargin', 'plateRadius', 'ring2W', 'ring2H', 'ring3W', 'ring3H', 'artLines']) {
+  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'backDepth', 'backMargin', 'plateRadius', 'borderW', 'ring2W', 'ring2H', 'ring3W', 'ring3H', 'artLines']) {
     el[key].value = DEFAULTS[key];
   }
   el.boneShaft.value = DEFAULTS.boneShaft * 100;

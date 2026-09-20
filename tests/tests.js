@@ -136,22 +136,28 @@ test('the bundled fonts load', async () => {
   return `${fonts.size} fonts`;
 });
 
-test('the default size is 2.5 x 1.5 in, and stretch fills it exactly', () => {
+test('the size is 2.5 x 1.5 in; without the tab counted it is the body, and stretch fills it exactly', () => {
   for (const [name, f] of fonts) {
-    const m = build(f);
+    const m = build(f, { sizeIncludesTab: false });
     const w = m.layout.hw * 2, h = m.layout.hh * 2;
     assert(w <= 63.51 && h <= 38.11, `${name}: body ${w.toFixed(2)} x ${h.toFixed(2)} exceeds 63.5 x 38.1`);
     assert(Math.abs(w - 63.5) < 0.05 || Math.abs(h - 38.1) < 0.05, `${name}: neither dimension reaches the target`);
-    const s = build(f, { fit: 'stretch' });
+    const s = build(f, { fit: 'stretch', sizeIncludesTab: false });
     near(s.layout.hw * 2, 63.5, 0.05, `${name} stretch width`);
     near(s.layout.hh * 2, 38.1, 0.05, `${name} stretch height`);
   }
 });
 
-test('the size can include the key hole tab', () => {
-  const m = build(font(/Carter/), { sizeIncludesTab: true });
-  assert(m.size.w <= 63.51 && m.size.h <= 38.11, `overall ${m.size.w.toFixed(2)} x ${m.size.h.toFixed(2)}`);
-  assert(Math.abs(m.size.w - 63.5) < 0.1 || Math.abs(m.size.h - 38.1) < 0.1, 'neither overall dimension reaches the target');
+test('the key hole tab is counted in the size by default, for every base shape', () => {
+  const f = font(/Carter/);
+  for (const shape of ['text', 'plate', 'round', 'hex', 'dogbone']) {
+    const m = build(f, { baseShape: shape });
+    assert(m.size.w <= 63.55 && m.size.h <= 38.15, `${shape}: overall ${m.size.w.toFixed(2)} x ${m.size.h.toFixed(2)} is over 63.5 x 38.1`);
+    assert(Math.abs(m.size.w - 63.5) < 0.1 || Math.abs(m.size.h - 38.1) < 0.1, `${shape}: neither overall dimension reaches the target`);
+    if (shape !== 'text') assert(Math.abs(m.size.w - 63.5) < 0.1 && Math.abs(m.size.h - 38.1) < 0.1, `${shape}: a plate fills the size (${m.size.w.toFixed(2)} x ${m.size.h.toFixed(2)})`);
+  }
+  const body = build(f, { sizeIncludesTab: false });
+  assert(body.size.w > 63.6, 'with the tab left out of the size, the tab sticks out past it');
 });
 
 test('outline rings stack contiguously under the text', () => {
@@ -304,6 +310,70 @@ test('dog bone: the key hole in the middle of the top edge clears the text and n
     assert(base.length === 1 && base[0].holes.length === 1, `shaft ${shaft}: one piece with one hole`);
     if (shaft <= 0.5) near(m.size.h, 38.1, 0.05, `shaft ${shaft}: the tab sits between the knobs, so the height is unchanged`);
   }
+});
+
+test('layers can be taken away: no outlines, no text, no base', () => {
+  const f = font(/Carter/);
+  const keys = (m) => [...new Set(m.layers.map((l) => l.key))].join();
+  const none = build(f, { rings: 0 });
+  assert(keys(none) === 'base,text', `no outline: ${keys(none)}`);
+  near(none.layers.find((l) => l.key === 'text').z0, none.layers.find((l) => l.key === 'base').z1, 1e-9, 'the text sits right on the base');
+  const noText = build(f, { textOn: false });
+  assert(keys(noText) === 'base,outline', `no text: ${keys(noText)}`);
+  near(noText.size.d, 1.2 + 0.6, 1e-9, 'total thickness without the text');
+  const noBase = build(f, { baseOn: false, holeEnabled: true, backKind: 'qr', qrText: 'https://x.co', borderW: 0.8 });
+  assert(keys(noBase) === 'outline,text', `no base: ${keys(noBase)}`);
+  assert(!noBase.exact.hole && noBase.layers.every((l) => l.z0 >= 0) && noBase.layers[0].z0 === 0, 'the key hole, back and border need a base, so they drop away with it');
+  near(noBase.size.w, 63.5, 0.1, 'no base: the size is still the size asked for');
+  const lone = build(f, { rings: 0, textOn: false });
+  assert(keys(lone) === 'base', `only a base: ${keys(lone)}`);
+  const onlyText = build(f, { rings: 0, baseOn: false });
+  assert(keys(onlyText) === 'text', `only text: ${keys(onlyText)}`);
+  // every combination still makes watertight STLs with the right volume
+  let n = 0;
+  for (const rings of [0, 1, 3]) for (const textOn of [true, false]) for (const baseOn of [true, false]) {
+    if (!rings && !textOn && !baseOn) continue;
+    for (const baseShape of ['text', 'plate', 'dogbone']) {
+      const m = build(f, { rings, textOn, baseOn, baseShape, borderW: baseShape === 'dogbone' ? 0.8 : 0 });
+      for (const file of stlFilesFromModel(m, 't')) {
+        const st = stlStats(file.data), exp = volumeOf(m, file.key);
+        assert(st.open === 0, `rings ${rings} text ${textOn} base ${baseOn} ${baseShape} ${file.key}: ${st.open} open edges`);
+        near(st.vol / exp, 1, 0.001, `rings ${rings} text ${textOn} base ${baseOn} ${baseShape} ${file.key} volume`);
+      }
+      n++;
+    }
+  }
+  return `${n} combinations`;
+});
+
+test('a border is a raised rim along the edge of the base, as tall as the layer above the base', () => {
+  const f = font(/Carter/);
+  for (const shape of ['plate', 'round', 'hex', 'dogbone', 'text']) {
+    const m = build(f, { baseShape: shape, borderW: 0.8, rings: 2, ring2H: 0.4 });
+    const border = m.layers.find((l) => l.key === 'border');
+    const base = m.layers.find((l) => l.key === 'base');
+    assert(border, `${shape}: has a border`);
+    near(border.z0, base.z1, 1e-9, `${shape}: the border sits on the base`);
+    near(border.z1 - border.z0, 0.4, 1e-9, `${shape}: as tall as the outermost outline (0.4)`);
+    // every point of the border is within 0.8 mm of the outer edge of the base, and none is outside it
+    const edge = base.polys.map((p) => p.outer);
+    for (const p of border.polys) for (const [x, y] of p.outer) {
+      assert(distToRings(x, y, edge) < 0.05 || distToRings(x, y, base.polys.flatMap((q) => q.holes)) < 0.9, `${shape}: border point off the edge`);
+    }
+    assert(m.warnings.length === 0, `${shape}: ${m.warnings.join(' | ')}`);
+    // its area is about the perimeter times its width
+    let perimeter = 0;
+    for (const p of base.polys) for (const ring of [p.outer]) for (let i = 0; i < ring.length; i++) { const [x1, y1] = ring[i], [x2, y2] = ring[(i + 1) % ring.length]; perimeter += Math.hypot(x2 - x1, y2 - y1); }
+    const area = netArea(border.polys);
+    assert(area > perimeter * 0.8 * 0.7 && area < perimeter * 0.8 * 1.15, `${shape}: border area ${area.toFixed(1)} vs perimeter ${perimeter.toFixed(1)} x 0.8`);
+  }
+  const plain = build(f, { baseShape: 'dogbone', borderW: 0.8 });
+  const rim = plain.layers.find((l) => l.key === 'border');
+  const h = plain.exact.hole;
+  for (const p of rim.polys) for (const ring of [p.outer, ...p.holes]) for (const [x, y] of ring) assert(Math.hypot(x - h.cx, y - h.cy) >= h.R + 0.3, 'the border stays clear of the key hole');
+  assert(!build(f, { borderW: 0 }).layers.some((l) => l.key === 'border'), 'no border by default');
+  const wide = build(f, { baseMargin: 0.5, borderW: 1.5 });
+  assert(wide.warnings.some((w) => /border/.test(w)), 'a border that runs into the outline is flagged');
 });
 
 test('line offsets move a line relative to the others; a frozen layout rebuilds identically', () => {

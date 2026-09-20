@@ -68,13 +68,17 @@ export function analyze(model, s) {
     const w = r.index === 1 ? p.outline : r.index === 2 ? p.ring2W : p.ring3W;
     if (w < s.minDetail) warnings.push(`${r.name} is only ${w} mm wide, thinner than ${s.minDetail} mm.`);
   }
-  if (p.baseMargin < s.minDetail) warnings.push(`The base only extends ${p.baseMargin} mm past the outline.`);
+  const hasBase = model.layers.some((l) => l.key === 'base');
+  if (hasBase && p.baseMargin < s.minDetail) warnings.push(`The base only extends ${p.baseMargin} mm past the outline.`);
+  const rim = model.layers.find((l) => l.key === 'border');
+  if (rim && p.borderW < s.minDetail) warnings.push(`The border is only ${p.borderW} mm wide, thinner than ${s.minDetail} mm.`);
   if (p.holeEnabled && p.holeEdge < 1.2) warnings.push(`The wall around the key hole is ${p.holeEdge} mm, thinner than three extrusion lines (1.2 mm): it may snap.`);
 
   if (s.layerHeight > 0) {
-    const heights = [['Text', p.textH], ['Outline', p.midH], ['Base', p.baseH]];
-    if (p.rings >= 2) heights.splice(2, 0, ['Outline 2', p.ring2H]);
-    if (p.rings >= 3) heights.splice(3, 0, ['Outline 3', p.ring3H]);
+    const heights = [];
+    if (text) heights.push(['Text', p.textH]);
+    ringDefs(p).forEach((r) => heights.push([r.name, r.h]));
+    if (hasBase) heights.push(['Base', p.baseH]);
     if (model.back) heights.push(['Recess depth', model.back.depth]);
     const off = heights.filter(([, h]) => Math.abs(h / s.layerHeight - Math.round(h / s.layerHeight)) > 0.02);
     if (off.length) warnings.push(`${off.map(([n, h]) => `${n} ${+h.toFixed(2)} mm`).join(', ')} ${off.length === 1 ? "isn't a multiple" : "aren't multiples"} of ${s.layerHeight} mm layers, so the slicer will round.`);

@@ -205,11 +205,18 @@ function build(model, colors, progress) {
   const text = model.layers.find((l) => l.key === 'text');
   const base = model.layers.find((l) => l.key === 'base');
   const ringLayers = model.layers.filter((l) => l.key.startsWith('outline'));
+  const borderLayer = model.layers.find((l) => l.key === 'border');
   const { contours, basePlain, hole } = model.exact;
 
-  progress('Building the text…');
-  const textShape = exactText(contours, model.exact.textOverlap, text.z0, text.z1, netArea(text.polys) * (text.z1 - text.z0), report)
-    || prisms(text.polys, text.z0, text.z1);
+  // Any layer can have been taken away (a keychain needs at least one).
+  let textShape = null;
+  if (text) {
+    progress('Building the text…');
+    textShape = exactText(contours, model.exact.textOverlap, text.z0, text.z1, netArea(text.polys) * (text.z1 - text.z0), report)
+      || prisms(text.polys, text.z0, text.z1);
+  } else {
+    report.text = 'none';
+  }
 
   // How much the arc fitting saved: polygon vertices in, edges out (an edge is a line or a whole arc).
   const tally = { points: 0, segments: 0 };
@@ -220,49 +227,62 @@ function build(model, colors, progress) {
   const ringShapes = ringBodies.map(({ body, layer }) => ({ shape: body.shape, color: colors[layer.key], name: layer.name }));
   report.outline = ringBodies.every(({ body }) => body.how === 'arcs') ? 'arcs' : 'polygon';
 
-  progress('Building the base\u2026');
+  let borderShape = null;
+  if (borderLayer) {
+    progress('Building the border\u2026');
+    const body = count(bodyShape(borderLayer.polys, borderLayer.z0, borderLayer.z1));
+    borderShape = { shape: body.shape, color: colors.border, name: borderLayer.name };
+    report.border = body.how;
+  }
+
   const baseParts = model.layers.filter((l) => l.key === 'base');
   const backLayer = model.layers.find((l) => l.key === 'back');
   let baseShape = null;
-  const baseVolume = baseParts.reduce((t, l) => t + netArea(l.polys) * (l.z1 - l.z0), 0);
-  // With something recessed into its back the base is two slabs: a lower one with the pocket cut out, and the rest.
-  // Both start from the simplified outline (with the tab and fillets) and get the exact bore cut through them.
-  const slabs = backLayer
-    ? [
-        { polys: model.exact.baseLowerPlain, z0: baseParts[0].z0, z1: baseParts[0].z1 },
-        { polys: basePlain, z0: baseParts[1].z0, z1: baseParts[1].z1 },
-      ]
-    : [{ polys: basePlain, z0: base.z0, z1: base.z1 }];
-  for (const withArcs of [true, false]) {
-    try {
-      const bodies = slabs.map((s) => (withArcs ? bodyShape(s.polys, s.z0, s.z1) : { shape: prisms(s.polys, s.z0, s.z1), how: 'polygon', points: vertexCount(s.polys), segments: vertexCount(s.polys) }));
-      if (withArcs && !bodies.every((b) => b.how === 'arcs')) continue; // one slab failed: try all polygons instead
-      let shape = bodies.length === 1 ? bodies[0].shape : R.makeCompound(bodies.map((b) => b.shape));
-      if (hole) {
-        const bore = R.makeCylinder(hole.R, model.size.d + 2, [hole.cx, hole.cy, base.z0 - 1], [0, 0, 1]);
-        shape = shape.cut(bore);
+  if (base) progress('Building the base\u2026');
+  if (base) {
+    const baseVolume = baseParts.reduce((t, l) => t + netArea(l.polys) * (l.z1 - l.z0), 0);
+    // With something recessed into its back the base is two slabs: a lower one with the pocket cut out, and the rest.
+    // Both start from the simplified outline (with the tab and fillets) and get the exact bore cut through them.
+    const slabs = backLayer
+      ? [
+          { polys: model.exact.baseLowerPlain, z0: baseParts[0].z0, z1: baseParts[0].z1 },
+          { polys: basePlain, z0: baseParts[1].z0, z1: baseParts[1].z1 },
+        ]
+      : [{ polys: basePlain, z0: base.z0, z1: base.z1 }];
+    for (const withArcs of [true, false]) {
+      try {
+        const bodies = slabs.map((s) => (withArcs ? bodyShape(s.polys, s.z0, s.z1) : { shape: prisms(s.polys, s.z0, s.z1), how: 'polygon', points: vertexCount(s.polys), segments: vertexCount(s.polys) }));
+        if (withArcs && !bodies.every((b) => b.how === 'arcs')) continue; // one slab failed: try all polygons instead
+        let shape = bodies.length === 1 ? bodies[0].shape : R.makeCompound(bodies.map((b) => b.shape));
+        if (hole) {
+          const bore = R.makeCylinder(hole.R, model.size.d + 2, [hole.cx, hole.cy, base.z0 - 1], [0, 0, 1]);
+          shape = shape.cut(bore);
+        }
+        const valid = isValid(shape);
+        const vol = Math.abs(R.measureVolume(shape));
+        if (valid && volumeOk(shape, baseVolume, 0.02)) {
+          baseShape = shape;
+          report.baseFaces = withArcs ? 'arcs' : 'polygon';
+          bodies.forEach(count);
+          break;
+        }
+        report.baseWhy = `${withArcs ? 'arcs' : 'polygons'}: valid=${valid} volume=${vol.toFixed(1)} expected=${baseVolume.toFixed(1)}`;
+      } catch (e) {
+        console.warn(`Exact base (${withArcs ? 'arcs' : 'polygons'}) failed:`, e);
+        report.baseWhy = String((e && e.message) || e);
       }
-      const valid = isValid(shape);
-      const vol = Math.abs(R.measureVolume(shape));
-      if (valid && volumeOk(shape, baseVolume, 0.02)) {
-        baseShape = shape;
-        report.baseFaces = withArcs ? 'arcs' : 'polygon';
-        bodies.forEach(count);
-        break;
-      }
-      report.baseWhy = `${withArcs ? 'arcs' : 'polygons'}: valid=${valid} volume=${vol.toFixed(1)} expected=${baseVolume.toFixed(1)}`;
-    } catch (e) {
-      console.warn(`Exact base (${withArcs ? 'arcs' : 'polygons'}) failed:`, e);
-      report.baseWhy = String((e && e.message) || e);
     }
-  }
-  if (!baseShape) {
-    report.base = 'polygon';
-    report.baseFaces = 'polygon';
-    baseShape = R.makeCompound(baseParts.map((l) => prisms(l.polys, l.z0, l.z1)));
-    baseParts.forEach((l) => count({ points: vertexCount(l.polys), segments: vertexCount(l.polys) }));
-  } else if (report.baseFaces === 'polygon') {
-    delete report.baseWhy; // the arcs didn't fit but the polygons did: nothing to worry about
+    if (!baseShape) {
+      report.base = 'polygon';
+      report.baseFaces = 'polygon';
+      baseShape = R.makeCompound(baseParts.map((l) => prisms(l.polys, l.z0, l.z1)));
+      baseParts.forEach((l) => count({ points: vertexCount(l.polys), segments: vertexCount(l.polys) }));
+    } else if (report.baseFaces === 'polygon') {
+      delete report.baseWhy; // the arcs didn't fit but the polygons did: nothing to worry about
+    }
+
+  } else {
+    report.base = 'none';
   }
 
   let backShape = null;
@@ -276,9 +296,10 @@ function build(model, colors, progress) {
 
   progress('Writing the STEP file…');
   const blob = writeStep([
-    { shape: baseShape, color: colors.base, name: 'Base' },
+    ...(baseShape ? [{ shape: baseShape, color: colors.base, name: 'Base' }] : []),
+    ...(borderShape ? [borderShape] : []),
     ...ringShapes,
-    { shape: textShape, color: colors.text, name: 'Text' },
+    ...(textShape ? [{ shape: textShape, color: colors.text, name: 'Text' }] : []),
     ...(backShape ? [{ shape: backShape, color: colors.back, name: backLayer.name }] : []),
   ]);
   return { blob, report };

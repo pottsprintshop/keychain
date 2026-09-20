@@ -57,6 +57,7 @@ function readParams() {
     baseMargin: num(el.baseMargin, DEFAULTS.baseMargin, 0),
     fillGaps: el.fillGaps.checked,
     baseShape: el.baseShape.value,
+    sportNumber: el.sportNumber.value,
     baseOn: el.baseOn.value === '1',
     textOn: el.textOn.value === '1',
     borderW: num(el.borderW, DEFAULTS.borderW, 0),
@@ -166,7 +167,7 @@ function syncLabels() {
   syncLayers();
   // The corner radius is for the rectangle and hexagon; the shaft thickness for the dog bone.
   el.plateRadiusWrap.hidden = !['plate', 'hex', 'sports'].includes(el.baseShape.value);
-  el.sportWrap.hidden = el.baseShape.value !== 'sports';
+  el.sportWrap.hidden = el.sportNumberWrap.hidden = el.baseShape.value !== 'sports';
   el.impactHint.hidden = !(el.baseShape.value === 'sports' && !currentFontIsImpact());
   el.boneShaftWrap.hidden = el.baseShape.value !== 'dogbone';
 }
@@ -418,11 +419,11 @@ function enableLineDragging() {
 // nests between the knobs), everything else from the left. Switching shape moves the hole to the new shape's spot,
 // unless it was moved by hand.
 // What each shape starts with, where that differs from the usual: the dog bone hangs from the middle of its top edge
-// and has a 0.8 mm rim; the Sports tag is a long thin rectangle (4 x 1 in) with a last name on it. Picking a shape
+// and has a 0.8 mm rim; the Sports tag is a long thin rectangle (4 x 0.75 in) with a last name on it and the same rim. Picking a shape
 // moves these to that shape's values, but only the ones still at the previous shape's (so nothing you set by hand is lost).
 const SHAPE_DEFAULTS = {
   dogbone: { holeAngle: 90, borderW: 0.8 },
-  sports: { width: 101.6, height: 25.4, text: 'Deutsch' },
+  sports: { width: 101.6, height: 19.05, text: 'Deutsch', borderW: 0.8 }, // 4 x 0.75 in, with a 0.8 mm rim
 };
 const SHAPE_KEYED = ['holeAngle', 'borderW']; // plain numeric controls
 const shapeDefault = (shape, key) => SHAPE_DEFAULTS[shape]?.[key] ?? DEFAULTS[key];

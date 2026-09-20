@@ -47,6 +47,7 @@ export const DEFAULTS = {
   holePush: 0, // 0..1: how far the tab sticks out past its snug position
   lineShifts: [], // per-line sideways nudge, % of the widest line
   lineShiftsY: [], // per-line vertical nudge, % of the font size
+  sportNumber: '', // the Sports tag's optional number (a jersey number), set after the name
   fixed: null, // while dragging a line: the previous build's `layout`, so nothing re-fits or re-centres
   // Extra outline rings, each one further out from the text (ring 1 is `outline`/`midH` above).
   rings: 1, // 0..3
@@ -238,13 +239,23 @@ export function pickLine(lines, x, y, pad = 1.5) {
 
 // ---- Fit + build ------------------------------------------------------------
 
+// The text as it is laid out: the Sports tag's optional number goes after the name (on its last line), a few spaces
+// away, whatever the font's space is.
+export function tagText(font, p) {
+  const number = p.baseShape === 'sports' ? String(p.sportNumber ?? '').trim() : '';
+  if (!number) return p.text;
+  const space = font.getAdvanceWidth(' ', NOMINAL) || NOMINAL * 0.25;
+  return p.text.replace(/\s+$/, '') + ' '.repeat(Math.max(1, Math.round((0.45 * NOMINAL) / space))) + number;
+}
+
 export function buildKeychain(font, params) {
   const p = { ...DEFAULTS, ...params };
   // Without a base there is nothing to bore a key hole in, recess a back into, or put a border on.
   const hasBase = p.baseOn !== false;
   if (!hasBase) Object.assign(p, { holeEnabled: false, backKind: 'none', borderW: 0 });
   // The front: the text, and/or the artwork placed above, below or instead of it.
-  let raw = p.art && p.artMode === 'only' ? [] : layoutText(font, p.text, p);
+  const text = tagText(font, p);
+  let raw = p.art && p.artMode === 'only' ? [] : layoutText(font, text, p);
   if (p.art && p.artMode !== 'off') raw = raw.concat(placeArt(p.art, raw, p));
   if (!raw.length) return null;
 
@@ -527,7 +538,7 @@ export function buildKeychain(font, params) {
     }
   }
   const half = halfBox(sx, sy);
-  const layout = p.fixed || { sx, sy, tx: -ink.cx * sx + shx, ty: -ink.cy * sy + shy, shx, shy, hw: half.hw, hh: half.hh, widest: widestLine(font, p.text) };
+  const layout = p.fixed || { sx, sy, tx: -ink.cx * sx + shx, ty: -ink.cy * sy + shy, shx, shy, hw: half.hw, hh: half.hh, widest: widestLine(font, text) };
 
   return {
     params: p,

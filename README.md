@@ -42,8 +42,7 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
 - **Key hole** — diameter, edge distance, and where it sits: quick Left / Top / Right / Bottom
   buttons, an *Around the edge* slider that slides it smoothly all the way around the keychain
   (180° = centered on the left), 20% / 50% / 80% height buttons, and *Sticks out* to pull it
-  further from the text. *Nerd Shite* has
-  the gap between the hole and the outline layer.
+  further from the text. Every slider's value is a box you can click and type into.
 - **QR code on the back** — type a link or any text and a QR code is recessed into the back of the
   base (see below).
 - **Preview** — live 3D view (Top / 3D / Back, drag to rotate, scroll to zoom).
@@ -55,11 +54,13 @@ contrasts with it — light on a dark base, dark on a light base (picked automat
 color, or choose your own). No plate and no border: the base around the code is its quiet zone. Turn
 the keychain over like a page and it reads correctly (the pattern is mirrored in the model).
 
-- *Error correction* L / M / Q / H, *Size* (blank = the biggest square that fits), *Recess depth*
+- The code is as big as fits while staying *Edge margin* (default 1.2 mm) from the base's edge and
+  the key hole, centered on the base body, so it grows and shrinks smoothly with the keychain.
+- *Error correction* L / M / Q / H, *Size* (blank = the biggest that fits), *Recess depth*
   (default 0.6 mm, so the modules are the first layers on the bed).
 - Light modules on a dark base are a negative image. iPhone Camera and most current Android scanners
-  read that, but a few older apps don't. *Nerd Shite* has a *plate* option that puts the code on a
-  light plate with a border, so it reads the usual way.
+  read that, but a few older apps don't. The *plate* option puts the code on a light plate with a
+  border, so it reads the usual way.
 - The panel shows the module size. Under 0.8 mm won't print reliably on a 0.4 mm nozzle, and the app
   warns you: shorten the text, use lower error correction, make the keychain bigger, or use the
   *Rectangle plate* base, which leaves far more room than a base that follows the letters.

@@ -181,17 +181,6 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .lg-none { text-align: center; color: var(--text-dim); }
 .layer-grid input[type="number"] { width: 100%; }
 
-.nerd-menu { margin: 0.2rem 0 0; }
-.nerd-menu summary {
-  cursor: pointer; font-family: "LemonMilk", -apple-system, sans-serif; font-weight: 500;
-  font-size: 0.8rem; letter-spacing: 0.04em; color: var(--accent); padding: 0.3rem 0;
-  user-select: none; list-style: none;
-}
-.nerd-menu summary::-webkit-details-marker { display: none; }
-.nerd-menu summary::marker { content: ""; }
-.nerd-menu summary::before { content: "\25B8"; display: inline-block; width: 1em; transition: transform 0.15s ease; }
-.nerd-menu[open] summary::before { transform: rotate(90deg); }
-
 .preview-box {
   background: var(--card);
   border: 1px solid var(--card-border);
@@ -228,9 +217,6 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .shift-block { margin-bottom: 0.7rem; }
 .shift-head { display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.3rem; }
 .shift-head em { font-style: normal; color: var(--text-dim); }
-.shift-row { margin-bottom: 0.25rem; flex-wrap: nowrap; }
-.shift-row label { min-width: 0; flex: 0 0 4.6rem; font-size: 0.85rem; }
-.shift-row span { color: var(--accent); font-variant-numeric: tabular-nums; }
 button.tiny { padding: 0.25rem 0.55rem; font-size: 0.9rem; line-height: 1; }
 [hidden] { display: none !important; }
 .dim { color: var(--text-dim); font-size: 0.75rem; }
@@ -240,3 +226,23 @@ label.wide input { width: 100%; }
 
 /* Warnings and errors use the theme's danger color. */
 .warn { color: var(--danger); }
+
+/* Font + Align share a line: the font gets the extra room. */
+.fields label.grow { flex: 2 1 10rem; }
+
+/* Sliders: name and value on one line, the slider below. The value is a number box: click it and type. */
+.slider-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.15rem 0.6rem; margin-bottom: 0.7rem; }
+.slider-row > label { font-size: 0.9rem; min-width: 0; }
+.slider-row > input[type="range"] { grid-column: 1 / -1; width: 100%; min-width: 0; }
+.slider-row.inline { grid-template-columns: 5.6rem auto 1fr; gap: 0 0.4rem; margin-bottom: 0.3rem; }
+.slider-row.inline > input[type="range"] { grid-column: auto; }
+.val { display: inline-flex; align-items: baseline; gap: 0.1rem; color: var(--accent); font-variant-numeric: tabular-nums; }
+.val .unit { font-size: 0.85rem; white-space: nowrap; }
+.val input.numval {
+  width: 3.7rem; text-align: right; font: inherit; font-size: 0.95rem; padding: 0.1rem 0.3rem;
+  color: var(--accent); background: transparent; border: 1px dashed transparent; border-radius: 6px;
+  -moz-appearance: textfield; appearance: textfield;
+}
+.val input.numval::-webkit-outer-spin-button, .val input.numval::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.val input.numval:hover { border-color: var(--card-border); }
+.val input.numval:focus { outline: none; border-color: var(--accent); background: var(--field); color: var(--on-field); }

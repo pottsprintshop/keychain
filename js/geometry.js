@@ -47,12 +47,12 @@ export const DEFAULTS = {
   qrText: '',
   qrEcc: 'M', // error correction: L, M, Q or H
   qrPlate: false, // false: just the code's modules, in a color that contrasts with the base; true: modules on a plate
-  qrSize: 0, // side of the QR square in mm incl. its quiet zone; 0 = as big as fits
+  qrSize: 0, // side of the code in mm (with a plate: the plate's side); 0 = as big as fits
+  qrMargin: 1.2, // the code keeps at least this far (mm) from the base's edge, and from the key hole
   qrDepth: 0.6, // how deep the QR plate is recessed into the base (mm)
 };
 
-const QR_QUIET = 2; // light border around the QR code, in modules
-const QR_WALL = 1; // keep the QR plate at least this far inside the base's edge (mm)
+const QR_QUIET = 2; // border around the code when it's on a plate, in modules
 const QR_MIN_MODULE = 0.8; // smaller than this won't print reliably on a 0.4 mm nozzle
 const QR_GAP = 0.02; // dark modules shrink by this (mm) so ones touching only at a corner don't pinch
 
@@ -267,6 +267,13 @@ export function angleForHeight(track, side, frac) {
 
 // ---- QR code on the back ------------------------------------------------------
 
+// Bounding box of Clipper paths, in mm.
+const pathsBBox = (paths) => {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const path of paths) for (const { X, Y } of path) { x0 = Math.min(x0, X); x1 = Math.max(x1, X); y0 = Math.min(y0, Y); y1 = Math.max(y1, Y); }
+  return { cx: (x0 + x1) / 2 / SCALE, cy: (y0 + y1) / 2 / SCALE, w: (x1 - x0) / SCALE, h: (y1 - y0) / SCALE };
+};
+
 const rectPath = (cx, cy, hw, hh) => {
   const x0 = Math.round((cx - hw) * SCALE), x1 = Math.round((cx + hw) * SCALE);
   const y0 = Math.round((cy - hh) * SCALE), y1 = Math.round((cy + hh) * SCALE);
@@ -282,39 +289,35 @@ const squarePath = (cx, cy, side) => {
   return [{ X: x0, Y: y0 }, { X: x1, Y: y0 }, { X: x1, Y: y1 }, { X: x0, Y: y1 }];
 };
 
-// Lay a QR code on the back of the base, centred at (cx, cy). Seen from the back it reads
-// correctly (the pattern is mirrored left-right in model space). Returns the light plate
-// (light modules + quiet zone) as paths; the dark modules are simply left as base material.
-function layoutQr(qr, basePunchedPaths, cx, cy, p, warnings) {
-  const cells = qr.n + 2 * QR_QUIET;
-  const inner = allPaths(offsetTree(basePunchedPaths, -QR_WALL));
+// Lay a QR code on the back of the base, centred on `body` (the base's bounding box, not counting the key
+// hole tab). It's as big as fits while staying `qrMargin` from the base's edge, so it grows and shrinks
+// smoothly with the keychain. Seen from the back it reads correctly (the pattern is mirrored left-right in
+// model space). Returns the light body as paths.
+function layoutQr(qr, basePunchedPaths, body, p, warnings) {
+  const { cx, cy } = body;
+  const quiet = p.qrPlate ? QR_QUIET : 0; // a plate needs a border; the bare code doesn't
+  const cells = qr.n + 2 * quiet;
+  // (plus the tolerance the final outline is simplified by, so the margin is a true minimum)
+  const inner = allPaths(offsetTree(basePunchedPaths, -(Math.max(0, p.qrMargin) + SIMPLIFY_EPS)));
   const fits = (side) => treeToPolys(runClipper(CL.ClipType.ctDifference, [squarePath(cx, cy, side)], inner)).length === 0;
 
   let side;
   if (p.qrSize > 0) {
     side = p.qrSize;
-    if (!fits(side)) warnings.push('The QR code is bigger than the back of the keychain, so part of it hangs off the edge.');
+    if (!fits(side)) warnings.push('The QR code is bigger than the back of the keychain (or closer to its edge than the margin), so part of it may hang off.');
   } else {
-    const bb = { w: 0, h: 0 };
-    for (const path of basePunchedPaths) {
-      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-      for (const { X, Y } of path) { x0 = Math.min(x0, X); x1 = Math.max(x1, X); y0 = Math.min(y0, Y); y1 = Math.max(y1, Y); }
-      bb.w = Math.max(bb.w, (x1 - x0) / SCALE);
-      bb.h = Math.max(bb.h, (y1 - y0) / SCALE);
-    }
-    let lo = 0, hi = Math.min(bb.w, bb.h);
-    for (let i = 0; i < 14; i++) {
+    let lo = 0, hi = Math.min(body.w, body.h);
+    for (let i = 0; i < 18; i++) {
       const mid = (lo + hi) / 2;
       if (fits(mid)) lo = mid; else hi = mid;
     }
-    // Round the module size down to 0.05 mm so the numbers stay tidy.
-    side = Math.floor(lo / cells / 0.05) * 0.05 * cells;
+    side = Math.max(0, lo - 0.002); // a hair under, so rounding to whole microns never eats the margin
   }
   const module = side / cells;
   if (!(module > 0)) return null;
   if (module < QR_MIN_MODULE) {
     warnings.push(
-      `The QR modules are only ${module.toFixed(2)} mm — too small to print reliably. Use a shorter link, lower error correction, a bigger keychain${p.baseShape === 'plate' ? '' : ', or the Rectangle base shape'}.`,
+      `The QR modules are only ${module.toFixed(2)} mm — too small to print reliably. Use a shorter link, lower error correction, a smaller edge margin, a bigger keychain${p.baseShape === 'plate' ? '' : ', or the Rectangle base shape'}.`,
     );
   }
 
@@ -328,8 +331,8 @@ function layoutQr(qr, basePunchedPaths, cx, cy, p, warnings) {
   for (let r = 0; r < qr.n; r++) {
     for (let c = 0; c < qr.n; c++) {
       if (!qr.isDark(r, c)) continue;
-      const col = QR_QUIET + (qr.n - 1 - c); // mirrored: it's on the back
-      const row = QR_QUIET + r;
+      const col = quiet + (qr.n - 1 - c); // mirrored: it's on the back
+      const row = quiet + r;
       dark.push([{ X: gx[col], Y: gy[row + 1] }, { X: gx[col + 1], Y: gy[row + 1] }, { X: gx[col + 1], Y: gy[row] }, { X: gx[col], Y: gy[row] }]);
     }
   }
@@ -340,7 +343,7 @@ function layoutQr(qr, basePunchedPaths, cx, cy, p, warnings) {
   // (the base around it is the quiet zone). On a dark base that's a light-on-dark (negative) code; on a
   // light base it's the usual dark-on-light. With `qrPlate`, it's a plate with the modules left as base.
   const light = p.qrPlate ? allPaths(runClipper(CL.ClipType.ctDifference, plate, darkShrunk)) : darkShrunk;
-  return { light, side, module, cells, n: qr.n };
+  return { light, side, module, cells, n: qr.n, quiet };
 }
 
 // Which line of text is under (x, y)? An exact hit on the letters wins; otherwise the nearest line
@@ -485,6 +488,7 @@ export function buildKeychain(font, params) {
     const baseTree = offsetTree(inkPaths, M);
     basePaths = p.fillGaps ? outerPaths(baseTree) : allPaths(baseTree);
   }
+  const bodyBounds = pathsBBox(basePaths); // the base body without the key hole tab: what the QR code is centred on
   // Join the key hole tab on before rounding, so the fillets blend it into the body.
   if (hole) {
     basePaths = allPaths(runClipper(CL.ClipType.ctUnion, basePaths, [toPath(circlePoints(hole.cx, hole.cy, hole.Rt))]));
@@ -519,8 +523,7 @@ export function buildKeychain(font, params) {
     try {
       const code = makeQr(p.qrText, p.qrEcc);
       const depth = Math.max(0.2, Math.min(p.qrDepth, p.baseH - 0.2));
-      // Centre on the body (the tab, if any, sticks out beyond it).
-      const laid = layoutQr(code, basePunchedPaths, shx, shy, p, warnings);
+      const laid = layoutQr(code, basePunchedPaths, bodyBounds, p, warnings);
       if (laid) {
         // (Only collinear vertices are dropped: the QR's features are tiny and rectilinear.)
         const lightPolys = dropCollinear(treeToPolys(unionTree(laid.light)));
@@ -531,7 +534,7 @@ export function buildKeychain(font, params) {
           { key: 'base', name: 'Base', polys: basePolys, z0: depth, z1 },
         ];
         qrLayer = { key: 'qr', name: 'QR code', polys: lightPolys, z0: 0, z1: depth };
-        qr = { n: laid.n, cells: laid.cells, module: laid.module, side: laid.side, depth, ecc: p.qrEcc, plate: p.qrPlate, cx: shx, cy: shy };
+        qr = { n: laid.n, cells: laid.cells, module: laid.module, side: laid.side, depth, ecc: p.qrEcc, plate: p.qrPlate, margin: p.qrMargin, quiet: laid.quiet, cx: bodyBounds.cx, cy: bodyBounds.cy };
       }
     } catch (err) {
       warnings.push(`Can't make that QR code: ${err.message || err}. Try shorter text or lower error correction.`);

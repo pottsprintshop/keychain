@@ -22,26 +22,25 @@
       <textarea id="text" rows="2" spellcheck="false" placeholder="Type your text"></textarea>
       <p class="hint">Press Enter to start a new line.</p>
 
-      <div class="control-row">
-        <label for="font">Font</label>
-        <select id="font"></select>
+      <div class="fields">
+        <label class="grow">Font <select id="font"></select></label>
+        <label>Align
+          <select id="align">
+            <option value="left">Left</option>
+            <option value="center" selected>Center</option>
+            <option value="right">Right</option>
+          </select>
+        </label>
       </div>
       <div class="control-row">
         <button type="button" id="fontBtn" class="secondary">Upload font&hellip;</button>
         <input type="file" id="fontFile" accept=".ttf,.otf,.woff" hidden>
         <span id="fontNote" class="hint">TTF, OTF or WOFF &mdash; used for this session only.</span>
       </div>
-      <div class="control-row">
-        <label for="align">Align</label>
-        <select id="align">
-          <option value="left">Left</option>
-          <option value="center" selected>Center</option>
-          <option value="right">Right</option>
-        </select>
-      </div>
-      <div class="control-row">
-        <label for="lineSpacing">Line spacing <span id="lineSpacingVal"></span></label>
-        <input type="range" id="lineSpacing" min="0.5" max="1.6" step="0.05" value="1">
+      <div class="slider-row">
+        <label for="lineSpacing">Line spacing</label>
+        <span class="val"><input type="number" class="numval" id="lineSpacingNum" min="0.5" max="1.6" step="0.05" aria-label="Line spacing value"><span class="unit">&times;</span></span>
+        <input type="range" id="lineSpacing" min="0.5" max="1.6" step="any" value="1">
       </div>
       <div id="lineShifts" hidden>
         <p class="hint">Drag a line in the Top view to move it (the keychain re-fits to your size when you let go), or use the sliders. Left / right is a percent of the widest line; up / down is a percent of the font size.</p>
@@ -126,6 +125,7 @@
         <div class="fields">
           <label>Diameter (mm) <input type="number" id="holeDia" min="0.5" step="0.1"></label>
           <label>Edge distance (mm) <input type="number" id="holeEdge" min="0.5" step="0.1"></label>
+          <label>Gap to outline (mm) <input type="number" id="holeGap" min="0" step="0.1"></label>
         </div>
         <div class="control-row">
           <label>Put it on the</label>
@@ -136,9 +136,10 @@
             <button type="button" class="scale-btn" data-angle="270">Bottom</button>
           </div>
         </div>
-        <div class="control-row">
-          <label for="holeAngle">Around the edge <span id="holeAngleVal"></span></label>
-          <input type="range" id="holeAngle" min="0" max="360" step="1" value="180">
+        <div class="slider-row">
+          <label for="holeAngle">Around the edge</label>
+          <span class="val"><input type="number" class="numval" id="holeAngleNum" min="0" max="360" step="1" aria-label="Angle around the edge in degrees"><span class="unit" id="holeAngleUnit"></span></span>
+          <input type="range" id="holeAngle" min="0" max="360" step="any" value="180">
         </div>
         <div class="control-row">
           <label>Height <span class="dim">from the top</span></label>
@@ -148,16 +149,11 @@
             <button type="button" class="scale-btn" data-h="80">80%</button>
           </div>
         </div>
-        <div class="control-row">
-          <label for="holePush">Sticks out <span id="holePushVal"></span></label>
-          <input type="range" id="holePush" min="0" max="100" step="1" value="0">
+        <div class="slider-row">
+          <label for="holePush">Sticks out</label>
+          <span class="val"><input type="number" class="numval" id="holePushNum" min="0" max="100" step="1" aria-label="How far it sticks out, percent"><span class="unit">%</span></span>
+          <input type="range" id="holePush" min="0" max="100" step="any" value="0">
         </div>
-        <details class="nerd-menu">
-          <summary>Nerd Shite</summary>
-          <div class="fields">
-            <label>Gap to outline layer (mm) <input type="number" id="holeGap" min="0" step="0.1"></label>
-          </div>
-        </details>
       </div>
     </section>
 
@@ -179,6 +175,7 @@
               <option value="H">H &mdash; sturdiest</option>
             </select>
           </label>
+          <label>Edge margin (mm) <input type="number" id="qrMargin" min="0" step="0.1"></label>
           <label>Size (mm) <input type="number" id="qrSize" min="5" step="0.5" placeholder="biggest that fits"></label>
           <label>Recess depth (mm) <input type="number" id="qrDepth" min="0.2" step="0.1"></label>
           <label>QR color <input type="color" id="colorQr" value="#f2f2f2" aria-label="QR color"></label>
@@ -186,14 +183,10 @@
         <div class="control-row checkbox-row">
           <label><input type="checkbox" id="qrAuto" checked> Contrast with the base color automatically</label>
         </div>
-        <p class="hint" id="qrInfo">The code is just the modules, added in a color that contrasts with the base: light on a dark base, dark on a light base. Turn the keychain over like a page and it reads correctly. A Rectangle base (under Layers) leaves room for a bigger, easier-to-scan code.</p>
-        <details class="nerd-menu">
-          <summary>Nerd Shite</summary>
-          <div class="control-row checkbox-row">
-            <label><input type="checkbox" id="qrPlate"> Put the code on a plate (most compatible on a dark base)</label>
-          </div>
-          <p class="hint">Light-on-dark codes are a negative image. iPhone Camera and most current Android scanners read them, but a few older apps only read the usual dark-on-light. The plate adds a light square with a border behind the code, so it reads the usual way.</p>
-        </details>
+        <div class="control-row checkbox-row">
+          <label><input type="checkbox" id="qrPlate"> Put the code on a plate with a border</label>
+        </div>
+        <p class="hint" id="qrInfo">The code is just the modules, added in a color that contrasts with the base: light on a dark base, dark on a light base. Turn the keychain over like a page and it reads correctly. A Rectangle base (under Layers) leaves room for a bigger, easier-to-scan code. Light-on-dark is a negative image: iPhone Camera and most current Android scanners read it, but a few older apps only read dark-on-light; the plate adds a light square with a border behind the code so it reads the usual way.</p>
       </div>
     </section>
   </div>
@@ -215,8 +208,8 @@
     <section class="panel">
       <div class="control-row download-row">
         <select id="format" aria-label="Export format">
-          <option value="step" selected>STEP (colored bodies)</option>
-          <option value="stl">STL (one file per body, zipped)</option>
+          <option value="step" selected>STEP</option>
+          <option value="stl">STL (zipped)</option>
         </select>
         <button id="downloadBtn" type="button" disabled>Download STEP</button>
       </div>

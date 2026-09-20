@@ -8,15 +8,15 @@ const MM_PER_IN = 25.4;
 
 const el = {
   text: $('text'), font: $('font'), fontBtn: $('fontBtn'), fontFile: $('fontFile'), fontNote: $('fontNote'),
-  align: $('align'), lineSpacing: $('lineSpacing'), lineSpacingVal: $('lineSpacingVal'),
+  align: $('align'), lineSpacing: $('lineSpacing'), lineSpacingNum: $('lineSpacingNum'),
   width: $('width'), height: $('height'), unit: $('unit'), fit: $('fit'), sizeIncludesTab: $('sizeIncludesTab'), finalSize: $('finalSize'),
   textH: $('textH'), midH: $('midH'), baseH: $('baseH'), outline: $('outline'), baseMargin: $('baseMargin'),
   fillGaps: $('fillGaps'), baseShape: $('baseShape'), plateRadius: $('plateRadius'), roundIn: $('roundIn'), roundOut: $('roundOut'),
   colorText: $('colorText'), colorOutline: $('colorOutline'), colorBase: $('colorBase'),
   holeEnabled: $('holeEnabled'), holeControls: $('holeControls'), holeDia: $('holeDia'), holeEdge: $('holeEdge'),
-  holeGap: $('holeGap'), holeAngle: $('holeAngle'), holeAngleVal: $('holeAngleVal'), holePush: $('holePush'), holePushVal: $('holePushVal'),
+  holeGap: $('holeGap'), holeAngle: $('holeAngle'), holeAngleNum: $('holeAngleNum'), holeAngleUnit: $('holeAngleUnit'), holePush: $('holePush'), holePushNum: $('holePushNum'),
   holeQuick: $('holeQuick'), holeHeights: $('holeHeights'), lineShifts: $('lineShifts'), lineShiftList: $('lineShiftList'),
-  qrEnabled: $('qrEnabled'), qrControls: $('qrControls'), qrText: $('qrText'), qrEcc: $('qrEcc'), qrAuto: $('qrAuto'), qrPlate: $('qrPlate'), qrSize: $('qrSize'),
+  qrEnabled: $('qrEnabled'), qrControls: $('qrControls'), qrText: $('qrText'), qrEcc: $('qrEcc'), qrMargin: $('qrMargin'), qrAuto: $('qrAuto'), qrPlate: $('qrPlate'), qrSize: $('qrSize'),
   qrDepth: $('qrDepth'), colorQr: $('colorQr'), qrInfo: $('qrInfo'),
   viewTop: $('viewTop'), view3d: $('view3d'), viewBack: $('viewBack'), preview: $('preview'), status: $('status'),
   format: $('format'), downloadBtn: $('downloadBtn'), exportInfo: $('exportInfo'),
@@ -74,6 +74,7 @@ function readParams() {
     qrEcc: el.qrEcc.value,
     qrPlate: el.qrPlate.checked,
     qrSize: num(el.qrSize, 0, 0),
+    qrMargin: num(el.qrMargin, DEFAULTS.qrMargin, 0),
     qrDepth: num(el.qrDepth, DEFAULTS.qrDepth, 0.2),
   };
 }
@@ -96,13 +97,33 @@ function fmtSize(w, h, unit) {
   return unit === 'in' ? `${(w / MM_PER_IN).toFixed(2)} × ${(h / MM_PER_IN).toFixed(2)} in` : `${w.toFixed(1)} × ${h.toFixed(1)} mm`;
 }
 
+// A slider's value is also a number box: click it and type an exact value. Typing moves the slider (and
+// rebuilds live); dragging the slider updates the box. Returns a function that refreshes the box.
+function pairSliderAndBox(range, box, decimals = 0) {
+  const show = () => {
+    if (document.activeElement !== box) box.value = String(+Number(range.value).toFixed(decimals));
+  };
+  range.addEventListener('input', show);
+  box.addEventListener('input', () => {
+    const v = parseFloat(box.value);
+    if (!Number.isFinite(v)) return;
+    range.value = String(Math.min(Number(range.max), Math.max(Number(range.min), v)));
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  box.addEventListener('change', () => (box.value = String(+Number(range.value).toFixed(decimals))));
+  box.addEventListener('focus', () => box.select());
+  show();
+  return show;
+}
+
+const sliderBoxes = []; // show() for each of the fixed sliders; syncLabels refreshes them after a programmatic change
+
 function syncLabels() {
-  el.lineSpacingVal.textContent = Number(el.lineSpacing.value).toFixed(2) + '×';
+  for (const show of sliderBoxes) show();
   const angle = Number(el.holeAngle.value);
   const compass = ['right', 'top right', 'top', 'top left', 'left', 'bottom left', 'bottom', 'bottom right'];
-  el.holeAngleVal.textContent = `${angle}° · ${compass[Math.round(angle / 45) % 8]}`;
-  el.holePushVal.textContent = `${el.holePush.value}%`;
-  for (const b of el.holeQuick.children) b.classList.toggle('active', Number(b.dataset.angle) === angle);
+  el.holeAngleUnit.textContent = `\u00b0 \u00b7 ${compass[Math.round(angle / 45) % 8]}`;
+  for (const b of el.holeQuick.children) b.classList.toggle('active', Math.round(angle) === Number(b.dataset.angle));
   el.holeControls.style.opacity = el.holeEnabled.checked ? '1' : '0.45';
   el.qrControls.style.opacity = el.qrEnabled.checked ? '1' : '0.45';
 }
@@ -137,8 +158,8 @@ function rebuild(fixed = null) {
     if (m.qr) {
       const negative = !m.qr.plate && brightness(el.colorQr.value) > brightness(el.colorBase.value);
       el.qrInfo.textContent =
-        `QR code: ${m.qr.n}\u00d7${m.qr.n} modules, ${m.qr.module.toFixed(2)} mm each, ${m.qr.side.toFixed(1)} mm square. Flip the keychain like a page to scan it.` +
-        (negative ? ' Light on dark is a negative image: most phones read it, but test yours (or use the plate under Nerd Shite).' : '');
+        `QR code: ${m.qr.n}\u00d7${m.qr.n} modules, ${m.qr.module.toFixed(2)} mm each, ${m.qr.side.toFixed(1)} mm square, ${m.qr.margin} mm from the edge (about ${(m.qr.margin / m.qr.module).toFixed(1)} modules). Flip the keychain like a page to scan it.` +
+        (negative ? ' Light on dark is a negative image: most phones read it, but test yours (or tick the plate option).' : '');
     } else if (el.qrEnabled.checked) {
       el.qrInfo.textContent = el.qrText.value.trim() ? 'The QR code could not be made — see the note under the preview.' : 'Type what the QR code should say.';
     }
@@ -169,8 +190,8 @@ function setShift(i, x, y) {
   lineShiftsY[i] = Math.max(-SHIFT_Y_MAX, Math.min(SHIFT_Y_MAX, y));
   const ui = shiftUi.get(i);
   if (ui) {
-    ui.rx.value = String(Math.round(lineShifts[i]));
-    ui.ry.value = String(Math.round(lineShiftsY[i]));
+    ui.rx.value = String(lineShifts[i]);
+    ui.ry.value = String(lineShiftsY[i]);
     ui.show();
   }
 }
@@ -187,8 +208,8 @@ function renderLineShifts() {
     range.type = 'range';
     range.min = String(min);
     range.max = String(max);
-    range.step = '1';
-    range.value = String(Math.round(value || 0));
+    range.step = 'any';
+    range.value = String(value || 0);
     range.setAttribute('aria-label', label);
     return range;
   };
@@ -212,32 +233,37 @@ function renderLineShifts() {
 
     const rx = slider(-SHIFT_X_MAX, SHIFT_X_MAX, lineShifts[i], `Line ${i + 1} left or right`);
     const ry = slider(-SHIFT_Y_MAX, SHIFT_Y_MAX, lineShiftsY[i], `Line ${i + 1} up or down`);
-    const vx = document.createElement('span');
-    const vy = document.createElement('span');
-    const sign = (v) => `${Number(v) > 0 ? '+' : ''}${v}%`;
-    const show = () => {
-      vx.textContent = sign(rx.value);
-      vy.textContent = sign(ry.value);
-    };
-    const row = (icon, range, value) => {
+    const row = (name, range, step) => {
       const r = document.createElement('div');
-      r.className = 'control-row shift-row';
+      r.className = 'slider-row inline';
       const label = document.createElement('label');
-      label.append(icon + ' ', value);
-      r.append(label, range);
-      return r;
+      label.textContent = name;
+      const box = document.createElement('input');
+      box.type = 'number';
+      box.className = 'numval';
+      box.min = range.min;
+      box.max = range.max;
+      box.step = step;
+      box.setAttribute('aria-label', `${name}, line ${i + 1}`);
+      const unit = document.createElement('span');
+      unit.className = 'unit';
+      unit.textContent = '%';
+      const val = document.createElement('span');
+      val.className = 'val';
+      val.append(box, unit);
+      r.append(label, val, range);
+      return { row: r, show: pairSliderAndBox(range, box, 1) };
     };
-    block.append(head, row('\u2194', rx, vx), row('\u2195', ry, vy));
-    show();
-    shiftUi.set(i, { rx, ry, show });
+    const X = row('Left / right', rx, 1);
+    const Y = row('Up / down', ry, 1);
+    block.append(head, X.row, Y.row);
+    shiftUi.set(i, { rx, ry, show: () => { X.show(); Y.show(); } });
     rx.addEventListener('input', () => {
       lineShifts[i] = Number(rx.value);
-      show();
       schedule();
     });
     ry.addEventListener('input', () => {
       lineShiftsY[i] = Number(ry.value);
-      show();
       schedule();
     });
     reset.addEventListener('click', () => {
@@ -410,7 +436,7 @@ function initForm() {
   el.width.value = +(DEFAULTS.width / k).toFixed(3);
   el.height.value = +(DEFAULTS.height / k).toFixed(3);
   el.width.step = el.height.step = '0.05';
-  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'qrDepth', 'plateRadius']) {
+  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'qrDepth', 'qrMargin', 'plateRadius']) {
     el[key].value = DEFAULTS[key];
   }
   el.holeAngle.value = DEFAULTS.holeAngle;
@@ -434,7 +460,7 @@ async function init() {
     el.text, el.font, el.align, el.lineSpacing, el.width, el.height, el.fit, el.sizeIncludesTab,
     el.textH, el.midH, el.baseH, el.outline, el.baseMargin, el.fillGaps, el.baseShape, el.plateRadius, el.roundIn, el.roundOut,
     el.holeEnabled, el.holeDia, el.holeEdge, el.holeGap, el.holeAngle, el.holePush,
-    el.qrEnabled, el.qrText, el.qrEcc, el.qrPlate, el.qrSize, el.qrDepth,
+    el.qrEnabled, el.qrText, el.qrEcc, el.qrPlate, el.qrMargin, el.qrSize, el.qrDepth,
   ];
   el.text.addEventListener('input', renderLineShifts);
   for (const input of live) input.addEventListener('input', schedule);
@@ -454,6 +480,7 @@ async function init() {
   el.viewBack.addEventListener('click', () => setView('back'));
   el.format.addEventListener('change', updateDownloadLabel);
   el.downloadBtn.addEventListener('click', download);
+  sliderBoxes.push(pairSliderAndBox(el.lineSpacing, el.lineSpacingNum, 2), pairSliderAndBox(el.holeAngle, el.holeAngleNum, 0), pairSliderAndBox(el.holePush, el.holePushNum, 0));
   updateDownloadLabel();
   renderLineShifts();
   rebuild();

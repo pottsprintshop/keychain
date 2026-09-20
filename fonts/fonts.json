@@ -2,5 +2,6 @@
   { "name": "Carter One", "file": "CarterOne-Regular.ttf" },
   { "name": "Lemon Milk Bold", "file": "LEMONMILK-Bold.otf" },
   { "name": "Lemon Milk Medium", "file": "LEMONMILK-Medium.otf" },
-  { "name": "Potts Graffiti", "file": "PottsGraffiti-Regular.ttf" }
+  { "name": "Potts Graffiti", "file": "PottsGraffiti-Regular.ttf" },
+  { "name": "Impact", "file": "Impact.ttf" }
 ]

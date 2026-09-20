@@ -62,10 +62,9 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   beside the text and as tall as it. An optional **Number** (a jersey number, up to six characters)
   goes after the name. The icons are
   built in (`js/icons.js`, made with Clipper cut-outs, nothing thinner than half a millimetre at 16 mm
-  tall). The tag is meant for the **Impact** font, which is licensed to the computer it came with and so
-  isn't shipped with the page: on desktop Chrome or Edge picking the tag looks it up on your computer
-  (the browser asks first); otherwise use *Upload font…* (on a Mac,
-  `/System/Library/Fonts/Supplemental/Impact.ttf`).
+  tall). The tag is set in **Impact**, which is bundled (`fonts/Impact.ttf`, supplied by the shop owner, who
+  handles its license; see `fonts/README.md`). Picking the tag switches to it, and a Sports link that names
+  no font uses it too.
 - **Key hole** — diameter, edge distance, gap to the outline, and quick Left / Top / Right / Bottom
   buttons. Under *Nerd Shite*: 20% / 50% / 80% height buttons, an *Around the edge* slider that slides
   it smoothly all the way around the keychain (180° = centered on the left), and *Sticks out* to pull
@@ -207,4 +206,5 @@ Drop the `.ttf` / `.otf` into `fonts/` and add a line to `fonts/fonts.json`:
 { "name": "My Font", "file": "MyFont-Regular.ttf" }
 ```
 
-Bundled: Carter One (SIL Open Font License), Lemon Milk (Bold, Medium), Potts Graffiti.
+Bundled: Carter One (SIL Open Font License), Lemon Milk (Bold, Medium), Potts Graffiti, Impact (see
+`fonts/README.md`).

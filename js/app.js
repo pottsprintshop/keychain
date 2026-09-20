@@ -451,8 +451,8 @@ el.baseShape.addEventListener('change', () => {
 });
 
 // ---- Impact, for the Sports tag ---------------------------------------------------------
-// Impact is licensed to the computer it came with, so it isn't shipped with this page. On desktop Chrome and Edge the
-// page can read it from the computer (the browser asks first); anywhere else, Upload font... does the same.
+// Impact ships with the page (fonts/Impact.ttf). If that file is ever taken out, desktop Chrome and Edge can still read
+// Impact from the computer (the browser asks first), and anywhere else Upload font... does the same.
 
 const isImpact = (font) => /^impact\b/i.test(fontDisplayName(font));
 const currentFontIsImpact = () => {
@@ -620,6 +620,9 @@ function applyFromUrl() {
   if (font) {
     const opt = [...el.font.options].find((o) => o.textContent === font);
     if (opt) el.font.value = opt.value;
+  } else if (controls.baseShape === 'sports') {
+    const impact = [...fonts].find(([, v]) => isImpact(v.font)); // (a Sports link that names no font uses Impact)
+    if (impact) el.font.value = impact[0];
   }
   const list = (s) => String(s || '').split(',').map(Number).filter(Number.isFinite);
   lineShifts = list(ls);

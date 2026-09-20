@@ -523,6 +523,25 @@ test('the Sports tag: 0.75 in high with a border, and an optional number after t
   assert(numbered.scale.x < plain.scale.x, 'the name gets a little smaller to make room');
 });
 
+test('the Sports tag in Impact (bundled): name, number and every icon fit the tag and print cleanly', () => {
+  const f = font(/Impact/);
+  assert(f.getAdvanceWidth('Deutsch', 100) > 200, 'Impact loaded');
+  for (const key of ['tennis', 'baseball', 'football', 'soccer']) {
+    const m = build(f, { baseShape: 'sports', text: 'Deutsch', sportNumber: '12', width: 101.6, height: 19.05, borderW: 0.8, art: getIcon(key), artMode: 'right', artLines: 1 });
+    near(m.size.w, 101.6, 0.1, `${key}: 4 in long`);
+    near(m.size.h, 19.05, 0.1, `${key}: 0.75 in high`);
+    assert(m.warnings.length === 0, `${key}: ${m.warnings.join(' | ')}`);
+    const base = m.layers.find((l) => l.key === 'base').polys;
+    for (const p of m.layers.find((l) => l.key === 'text').polys) for (const [x, y] of p.outer) assert(insidePolys(x, y, base), `${key}: the name, number or icon sticks out of the tag`);
+    assert(m.scale.x > 0.08, `${key}: the lettering is a reasonable size (${m.scale.x.toFixed(3)})`);
+    for (const file of stlFilesFromModel(m, 't')) {
+      const st = stlStats(file.data), exp = volumeOf(m, file.key);
+      assert(st.open === 0, `${key} ${file.key}: ${st.open} open edges`);
+      near(st.vol / exp, 1, 0.001, `${key} ${file.key} volume`);
+    }
+  }
+});
+
 test('line offsets move a line relative to the others; a frozen layout rebuilds identically', () => {
   const f = font(/Carter/);
   const m0 = build(f);
@@ -749,6 +768,7 @@ test('STEP: text-shaped base, 3 rings, back text', () => stepCheck(build(font(/G
 test('STEP: dog bone base', () => stepCheck(build(font(/Carter/), { baseShape: 'dogbone', text: 'Rex', width: 70 }), 'dogbone', { maxMB: 4, exactText: true }), { step: true });
 test('STEP: hexagon base with a QR code', () => stepCheck(build(font(/Carter/), { baseShape: 'hex', width: 60, height: 52, backKind: 'qr', qrText: 'https://x.co/a' }), 'hex+QR', { maxMB: 6 }), { step: true });
 test('STEP: sports tag with an icon', () => stepCheck(build(font(/Carter/), { baseShape: 'sports', text: 'Deutsch', width: 101.6, height: 25.4, art: getIcon('tennis'), artMode: 'right', artLines: 1 }), 'sports', { maxMB: 5, exactText: true }), { step: true });
+test('STEP: sports tag in Impact', () => stepCheck(build(font(/Impact/), { baseShape: 'sports', text: 'Deutsch', sportNumber: '12', width: 101.6, height: 19.05, borderW: 0.8, art: getIcon('soccer'), artMode: 'right', artLines: 1 }), 'sports-impact', { maxMB: 6, exactText: true }), { step: true });
 test('STEP: lines dragged together (overlapping glyphs) keep exact text', () => stepCheck(build(font(/Carter/), { lineShiftsY: [0, 35] }), 'overlap', { maxMB: 4, exactText: true }), { step: true });
 
 // ---- runner ----------------------------------------------------------------------------------------

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keychain Maker self-test</title>
+<link rel="stylesheet" href="../style.css">
+<script type="importmap">
+{ "imports": { "three": "../vendor/three.module.min.js" } }
+</script>
+<style>
+  main { display: block; max-width: 900px; }
+  .row { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.35rem 0.2rem; border-bottom: 1px solid var(--card-border); font-size: 0.9rem; }
+  .row .mark { flex: 0 0 1.2rem; font-weight: 700; }
+  .row.pass .mark { color: var(--success); }
+  .row.fail .mark, .row.fail .detail { color: var(--danger); }
+  .row .name { flex: 1; }
+  .row .detail { color: var(--text-dim); font-size: 0.8rem; flex: 2; }
+  .row .ms { color: var(--text-dim); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  #summary { font-family: "LemonMilk", sans-serif; font-size: 1.1rem; margin: 0.5rem 0 1rem; }
+  #summary.ok { color: var(--success); } #summary.bad { color: var(--danger); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Self-test</h1>
+  <p class="sub">Builds keychains and checks them: watertight meshes, hole clearance, QR codes that decode, links, batch, laser and STEP round trips.</p>
+</header>
+<main>
+  <section class="panel">
+    <div class="control-row">
+      <button id="run" type="button">Run all</button>
+      <label class="checkbox-row"><input type="checkbox" id="withStep" checked> Include the STEP tests (slow: loads the CAD engine)</label>
+    </div>
+    <p id="summary">Not run yet.</p>
+    <div id="results"></div>
+  </section>
+</main>
+<script src="vendor/jsQR.js"></script>
+<script type="module" src="tests.js"></script>
+</body>
+</html>

@@ -156,6 +156,15 @@ fonts/                    bundled fonts + fonts.json manifest
 vendor/                   third-party libraries (see vendor/README.md)
 ```
 
+## Self-test
+
+Open `tests/index.html` (over http, e.g. `http://localhost:8000/tests/`) and press **Run all**. It builds
+keychains and checks them: STL bodies watertight with the right volume across 36 configurations, the key hole
+clearing the outline at every angle, the back content inside its margin and centered, QR codes that decode
+(read from the rasterized back with an independent decoder), artwork tracing, shareable links, batch, laser
+output, the print check, and STEP round trips read back through OpenCascade. Add `?run` to the URL to run on
+load. Untick the STEP box to skip the slow ones.
+
 ## Adding a font
 
 Drop the `.ttf` / `.otf` into `fonts/` and add a line to `fonts/fonts.json`:

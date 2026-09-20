@@ -75,7 +75,16 @@
 
     <section class="panel">
       <h2>Layers</h2>
-      <p class="hint">Three stacked bodies, so a slicer can give each one its own color.</p>
+      <p class="hint">Stacked bodies, so a slicer can give each one its own color.</p>
+      <div class="fields">
+        <label>Outline rings
+          <select id="rings">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+        </label>
+      </div>
       <div class="layer-grid">
         <span class="lg-head"></span>
         <span class="lg-head">Color</span>
@@ -91,6 +100,16 @@
         <input type="color" id="colorOutline" value="#d4206a" aria-label="Outline color">
         <input type="number" id="midH" min="0.1" step="0.1">
         <input type="number" id="outline" min="0" step="0.1" aria-label="Outline offset">
+
+        <span class="lg-name ring-row" data-ring="2" hidden>Outline 2 <em>outside 1</em></span>
+        <input type="color" id="colorOutline2" value="#ffffff" aria-label="Outline 2 color" class="ring-row" data-ring="2" hidden>
+        <input type="number" id="ring2H" min="0.1" step="0.1" class="ring-row" data-ring="2" hidden>
+        <input type="number" id="ring2W" min="0" step="0.1" aria-label="Outline 2 width" class="ring-row" data-ring="2" hidden>
+
+        <span class="lg-name ring-row" data-ring="3" hidden>Outline 3 <em>outside 2</em></span>
+        <input type="color" id="colorOutline3" value="#3fa7ff" aria-label="Outline 3 color" class="ring-row" data-ring="3" hidden>
+        <input type="number" id="ring3H" min="0.1" step="0.1" class="ring-row" data-ring="3" hidden>
+        <input type="number" id="ring3W" min="0" step="0.1" aria-label="Outline 3 width" class="ring-row" data-ring="3" hidden>
 
         <span class="lg-name">Base <em>bottom</em></span>
         <input type="color" id="colorBase" value="#16161a" aria-label="Base color">
@@ -158,35 +177,52 @@
     </section>
 
     <section class="panel">
-      <h2>QR code on the back</h2>
-      <div class="control-row checkbox-row">
-        <label><input type="checkbox" id="qrEnabled"> Add a QR code on the back</label>
-      </div>
-      <div id="qrControls">
-        <label class="wide">What should it say?
-          <input type="text" id="qrText" placeholder="https://example.com" autocomplete="off" spellcheck="false">
+      <h2>Back</h2>
+      <div class="fields">
+        <label class="grow">Put on the back
+          <select id="backKind">
+            <option value="none" selected>Nothing</option>
+            <option value="qr">A QR code</option>
+            <option value="text">Text</option>
+            <option value="art">The artwork</option>
+          </select>
         </label>
-        <div class="fields">
-          <label>Error correction
-            <select id="qrEcc">
-              <option value="L">L &mdash; smallest code</option>
-              <option value="M" selected>M &mdash; balanced</option>
-              <option value="Q">Q &mdash; sturdier</option>
-              <option value="H">H &mdash; sturdiest</option>
-            </select>
+      </div>
+      <div id="backControls">
+        <div id="backQrWrap">
+          <label class="wide">What should it say?
+            <input type="text" id="qrText" placeholder="https://example.com" autocomplete="off" spellcheck="false">
           </label>
-          <label>Edge margin (mm) <input type="number" id="qrMargin" min="0" step="0.1"></label>
-          <label>Size (mm) <input type="number" id="qrSize" min="5" step="0.5" placeholder="biggest that fits"></label>
-          <label>Recess depth (mm) <input type="number" id="qrDepth" min="0.2" step="0.1"></label>
-          <label>QR color <input type="color" id="colorQr" value="#f2f2f2" aria-label="QR color"></label>
+          <div class="fields">
+            <label>Error correction
+              <select id="qrEcc">
+                <option value="L">L &mdash; smallest code</option>
+                <option value="M" selected>M &mdash; balanced</option>
+                <option value="Q">Q &mdash; sturdier</option>
+                <option value="H">H &mdash; sturdiest</option>
+              </select>
+            </label>
+          </div>
+          <div class="control-row checkbox-row">
+            <label><input type="checkbox" id="qrPlate"> Put the code on a plate with a border</label>
+          </div>
+        </div>
+        <div id="backTextWrap">
+          <label class="wide">Back text (Enter starts a new line)
+            <textarea id="backText" rows="2" spellcheck="false" placeholder="If found, call 303-555-0100"></textarea>
+          </label>
+        </div>
+        <p class="hint" id="backArtNote">Uses the artwork from the Artwork panel.</p>
+        <div class="fields">
+          <label>Edge margin (mm) <input type="number" id="backMargin" min="0" step="0.1"></label>
+          <label>Size (mm) <input type="number" id="backSize" min="5" step="0.5" placeholder="biggest that fits"></label>
+          <label>Recess depth (mm) <input type="number" id="backDepth" min="0.2" step="0.1"></label>
+          <label>Color <input type="color" id="colorBack" value="#f2f2f2" aria-label="Back color"></label>
         </div>
         <div class="control-row checkbox-row">
-          <label><input type="checkbox" id="qrAuto" checked> Contrast with the base color automatically</label>
+          <label><input type="checkbox" id="backAuto" checked> Contrast with the base color automatically</label>
         </div>
-        <div class="control-row checkbox-row">
-          <label><input type="checkbox" id="qrPlate"> Put the code on a plate with a border</label>
-        </div>
-        <p class="hint" id="qrInfo">The code is just the modules, added in a color that contrasts with the base: light on a dark base, dark on a light base. Turn the keychain over like a page and it reads correctly. A Rectangle base (under Layers) leaves room for a bigger, easier-to-scan code. Light-on-dark is a negative image: iPhone Camera and most current Android scanners read it, but a few older apps only read dark-on-light; the plate adds a light square with a border behind the code so it reads the usual way.</p>
+        <p class="hint" id="backInfo">Recessed flush into the underside of the base, in a color that contrasts with it: light on a dark base, dark on a light base. Turn the keychain over like a page and it reads correctly. A Rectangle base (under Layers) leaves room for a bigger back. Light-on-dark is a negative image: iPhone Camera and most current Android scanners read a QR code that way, but a few older apps only read dark-on-light; the plate option adds a light square with a border so it reads the usual way.</p>
       </div>
     </section>
   </div>

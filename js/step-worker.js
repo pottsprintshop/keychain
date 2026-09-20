@@ -1,9 +1,9 @@
 // STEP export worker. Loads the OpenCascade kernel (replicad) on first use and builds
 // the three bodies as real B-rep solids:
 //   text     exact glyph curves (falls back to polygons if the curves don't check out)
-//   outline  polygon prism
+//   outline  polygon prisms (one per ring)
 //   base     polygon prism (tab and fillets included) with an exact cylindrical hole
-//   qr       polygon prism (the light QR plate; the dark modules are base material)
+//   back     polygon prism (the recessed QR / text / artwork body)
 // Every "exact" build is checked (valid solid, volume matches the polygons) and
 // silently falls back to the polygon version if it isn't.
 
@@ -93,9 +93,9 @@ function glyphSolids(contours, z0, z1) {
 
 function build(model, colors, progress) {
   const report = { text: 'exact', outline: 'polygon', base: 'exact' };
-  const byKey = Object.fromEntries(model.layers.map((l) => [l.key, l])); // (the last of any repeated key)
-  const { text, outline } = byKey;
+  const text = model.layers.find((l) => l.key === 'text');
   const base = model.layers.find((l) => l.key === 'base');
+  const ringLayers = model.layers.filter((l) => l.key.startsWith('outline'));
   const { contours, basePlain, hole } = model.exact;
 
   progress('Building the text…');
@@ -112,16 +112,16 @@ function build(model, colors, progress) {
   }
 
   progress('Building the outline…');
-  const outlineShape = prisms(outline.polys, outline.z0, outline.z1);
+  const ringShapes = ringLayers.map((l) => ({ shape: prisms(l.polys, l.z0, l.z1), color: colors[l.key], name: l.name }));
 
   progress('Building the base\u2026');
   const baseParts = model.layers.filter((l) => l.key === 'base');
-  const qrLayer = model.layers.find((l) => l.key === 'qr');
+  const backLayer = model.layers.find((l) => l.key === 'back');
   let baseShape = null;
   const baseVolume = baseParts.reduce((t, l) => t + netArea(l.polys) * (l.z1 - l.z0), 0);
   try {
-    // With a QR code the base is two slabs: a lower one with the light QR plate cut out, and the rest.
-    const slabs = qrLayer
+    // With something recessed into its back the base is two slabs: a lower one with the pocket cut out, and the rest.
+    const slabs = backLayer
       ? [
           { polys: model.exact.baseLowerPlain, z0: baseParts[0].z0, z1: baseParts[0].z1 },
           { polys: basePlain, z0: baseParts[1].z0, z1: baseParts[1].z1 },
@@ -145,19 +145,19 @@ function build(model, colors, progress) {
     baseShape = R.makeCompound(baseParts.map((l) => prisms(l.polys, l.z0, l.z1)));
   }
 
-  let qrShape = null;
-  if (qrLayer) {
-    progress('Building the QR code\u2026');
-    qrShape = prisms(qrLayer.polys, qrLayer.z0, qrLayer.z1);
-    report.qr = 'polygon';
+  let backShape = null;
+  if (backLayer) {
+    progress(`Building the ${backLayer.name.toLowerCase()}\u2026`);
+    backShape = prisms(backLayer.polys, backLayer.z0, backLayer.z1);
+    report.back = 'polygon';
   }
 
   progress('Writing the STEP file…');
   const blob = R.exportSTEP([
     { shape: baseShape, color: colors.base, name: 'Base' },
-    { shape: outlineShape, color: colors.outline, name: 'Outline' },
+    ...ringShapes,
     { shape: textShape, color: colors.text, name: 'Text' },
-    ...(qrShape ? [{ shape: qrShape, color: colors.qr, name: 'QR' }] : []),
+    ...(backShape ? [{ shape: backShape, color: colors.back, name: backLayer.name }] : []),
   ]);
   return { blob, report };
 }

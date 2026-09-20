@@ -7,21 +7,8 @@ import { stlFilesFromModel } from './mesh.js';
 const $ = (id) => document.getElementById(id);
 const MM_PER_IN = 25.4;
 
-const el = {
-  text: $('text'), font: $('font'), fontBtn: $('fontBtn'), fontFile: $('fontFile'), fontNote: $('fontNote'),
-  align: $('align'), lineSpacing: $('lineSpacing'), lineSpacingNum: $('lineSpacingNum'),
-  width: $('width'), height: $('height'), unit: $('unit'), fit: $('fit'), sizeIncludesTab: $('sizeIncludesTab'), finalSize: $('finalSize'),
-  textH: $('textH'), midH: $('midH'), baseH: $('baseH'), outline: $('outline'), baseMargin: $('baseMargin'),
-  fillGaps: $('fillGaps'), baseShape: $('baseShape'), plateRadius: $('plateRadius'), roundIn: $('roundIn'), roundOut: $('roundOut'),
-  colorText: $('colorText'), colorOutline: $('colorOutline'), colorBase: $('colorBase'),
-  holeEnabled: $('holeEnabled'), holeControls: $('holeControls'), holeDia: $('holeDia'), holeEdge: $('holeEdge'),
-  holeGap: $('holeGap'), holeAngle: $('holeAngle'), holeAngleNum: $('holeAngleNum'), holeAngleUnit: $('holeAngleUnit'), holePush: $('holePush'), holePushNum: $('holePushNum'),
-  holeQuick: $('holeQuick'), holeHeights: $('holeHeights'), lineShifts: $('lineShifts'), lineShiftList: $('lineShiftList'),
-  qrEnabled: $('qrEnabled'), qrControls: $('qrControls'), qrText: $('qrText'), qrEcc: $('qrEcc'), qrMargin: $('qrMargin'), qrAuto: $('qrAuto'), qrPlate: $('qrPlate'), qrSize: $('qrSize'),
-  qrDepth: $('qrDepth'), colorQr: $('colorQr'), qrInfo: $('qrInfo'),
-  viewTop: $('viewTop'), view3d: $('view3d'), viewBack: $('viewBack'), preview: $('preview'), status: $('status'),
-  format: $('format'), downloadBtn: $('downloadBtn'), exportInfo: $('exportInfo'),
-};
+// Every element with an id, by id (all the ids are camelCase).
+const el = Object.fromEntries([...document.querySelectorAll('[id]')].map((e) => [e.id, e]));
 
 const fonts = new Map(); // option value -> { name, font }
 let model = null;
@@ -70,13 +57,20 @@ function readParams() {
     holePush: num(el.holePush, 0, 0) / 100,
     lineShifts: lineShifts.slice(),
     lineShiftsY: lineShiftsY.slice(),
-    qrEnabled: el.qrEnabled.checked,
+    rings: Number(el.rings.value),
+    ring2W: num(el.ring2W, DEFAULTS.ring2W, 0),
+    ring2H: num(el.ring2H, DEFAULTS.ring2H, 0.05),
+    ring3W: num(el.ring3W, DEFAULTS.ring3W, 0),
+    ring3H: num(el.ring3H, DEFAULTS.ring3H, 0.05),
+    backKind: el.backKind.value,
+    backText: el.backText.value,
+    backSize: num(el.backSize, 0, 0),
+    backMargin: num(el.backMargin, DEFAULTS.backMargin, 0),
+    backDepth: num(el.backDepth, DEFAULTS.backDepth, 0.2),
     qrText: el.qrText.value,
     qrEcc: el.qrEcc.value,
     qrPlate: el.qrPlate.checked,
-    qrSize: num(el.qrSize, 0, 0),
-    qrMargin: num(el.qrMargin, DEFAULTS.qrMargin, 0),
-    qrDepth: num(el.qrDepth, DEFAULTS.qrDepth, 0.2),
+    art: null,
   };
 }
 
@@ -85,13 +79,20 @@ const brightness = (hex) => {
   const n = parseInt(hex.slice(1), 16);
   return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
 };
-function syncQrColor() {
-  if (el.qrAuto.checked) el.colorQr.value = brightness(el.colorBase.value) < 0.5 ? '#f2f2f2' : '#16161a';
-  el.colorQr.disabled = el.qrAuto.checked;
+function syncBackColor() {
+  if (el.backAuto.checked) el.colorBack.value = brightness(el.colorBase.value) < 0.5 ? '#f2f2f2' : '#16161a';
+  el.colorBack.disabled = el.backAuto.checked;
 }
 const colors = () => {
-  syncQrColor();
-  return { text: el.colorText.value, outline: el.colorOutline.value, base: el.colorBase.value, qr: el.colorQr.value };
+  syncBackColor();
+  return {
+    text: el.colorText.value,
+    outline: el.colorOutline.value,
+    outline2: el.colorOutline2.value,
+    outline3: el.colorOutline3.value,
+    base: el.colorBase.value,
+    back: el.colorBack.value,
+  };
 };
 
 function fmtSize(w, h, unit) {
@@ -126,7 +127,13 @@ function syncLabels() {
   el.holeAngleUnit.textContent = `\u00b0 \u00b7 ${compass[Math.round(angle / 45) % 8]}`;
   for (const b of el.holeQuick.children) b.classList.toggle('active', Math.round(angle) === Number(b.dataset.angle));
   el.holeControls.style.opacity = el.holeEnabled.checked ? '1' : '0.45';
-  el.qrControls.style.opacity = el.qrEnabled.checked ? '1' : '0.45';
+  // Show only the parts of the Back panel that apply, and only the rings that exist.
+  const kind = el.backKind.value;
+  el.backControls.hidden = kind === 'none';
+  el.backQrWrap.hidden = kind !== 'qr';
+  el.backTextWrap.hidden = kind !== 'text';
+  el.backArtNote.hidden = kind !== 'art';
+  for (const r of document.querySelectorAll('.ring-row')) r.hidden = Number(r.dataset.ring) > Number(el.rings.value);
 }
 
 // ---- Building ------------------------------------------------------------------
@@ -156,13 +163,19 @@ function rebuild(fixed = null) {
     el.finalSize.textContent =
       `Overall size${m.params.holeEnabled ? ' with key hole' : ''}: ${fmtSize(m.size.w, m.size.h, el.unit.value)} × ${m.size.d.toFixed(1)} mm thick` +
       ` (${fmtSize(m.size.w, m.size.h, el.unit.value === 'in' ? 'mm' : 'in')})`;
-    if (m.qr) {
-      const negative = !m.qr.plate && brightness(el.colorQr.value) > brightness(el.colorBase.value);
-      el.qrInfo.textContent =
-        `QR code: ${m.qr.n}\u00d7${m.qr.n} modules, ${m.qr.module.toFixed(2)} mm each, ${m.qr.side.toFixed(1)} mm square, ${m.qr.margin} mm from the edge (about ${(m.qr.margin / m.qr.module).toFixed(1)} modules). Flip the keychain like a page to scan it.` +
+    if (m.back) {
+      const b = m.back;
+      const negative = b.kind === 'qr' && !b.plate && brightness(el.colorBack.value) > brightness(el.colorBase.value);
+      el.backInfo.textContent =
+        (b.kind === 'qr'
+          ? `QR code: ${b.n}\u00d7${b.n} modules, ${b.module.toFixed(2)} mm each, ${b.side.toFixed(1)} mm square, ${b.margin} mm from the edge (about ${(b.margin / b.module).toFixed(1)} modules). Flip the keychain like a page to scan it.`
+          : `${b.name}: ${b.width.toFixed(1)} \u00d7 ${b.height.toFixed(1)} mm, ${b.margin} mm from the edge. Mirrored, so it reads when you flip the keychain like a page.`) +
         (negative ? ' Light on dark is a negative image: most phones read it, but test yours (or tick the plate option).' : '');
-    } else if (el.qrEnabled.checked) {
-      el.qrInfo.textContent = el.qrText.value.trim() ? 'The QR code could not be made — see the note under the preview.' : 'Type what the QR code should say.';
+    } else if (el.backKind.value !== 'none') {
+      el.backInfo.textContent =
+        el.backKind.value === 'qr' ? (el.qrText.value.trim() ? 'The QR code could not be made — see the note under the preview.' : 'Type what the QR code should say.')
+        : el.backKind.value === 'text' ? 'Type the text for the back.'
+        : 'Add artwork in the Artwork panel first.';
     }
     el.status.classList.toggle('warn', m.warnings.length > 0);
     el.status.textContent = m.warnings.length
@@ -409,7 +422,7 @@ async function download() {
       const { blob, report } = await buildStep(model, colors(), (msg) => (el.exportInfo.textContent = msg));
       console.info('STEP built:', report);
       downloadBlob(blob, `${name}.step`);
-      el.exportInfo.textContent = `STEP saved: ${model.qr ? 'base, outline, text and QR' : 'base, outline and text'} as separate colored bodies.`;
+      el.exportInfo.textContent = `STEP saved: ${[...new Set(model.layers.map((l) => l.name))].join(', ')} as separate colored bodies.`;
     }
   } catch (err) {
     console.error(err);
@@ -431,7 +444,7 @@ function initForm() {
   el.width.value = +(DEFAULTS.width / k).toFixed(3);
   el.height.value = +(DEFAULTS.height / k).toFixed(3);
   el.width.step = el.height.step = '0.05';
-  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'qrDepth', 'qrMargin', 'plateRadius']) {
+  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'backDepth', 'backMargin', 'plateRadius', 'ring2W', 'ring2H', 'ring3W', 'ring3H']) {
     el[key].value = DEFAULTS[key];
   }
   el.holeAngle.value = DEFAULTS.holeAngle;
@@ -451,24 +464,19 @@ async function init() {
   }
   el.font.value = el.font.options[0] ? el.font.options[0].value : '';
 
-  const live = [
-    el.text, el.font, el.align, el.lineSpacing, el.width, el.height, el.fit, el.sizeIncludesTab,
-    el.textH, el.midH, el.baseH, el.outline, el.baseMargin, el.fillGaps, el.baseShape, el.plateRadius, el.roundIn, el.roundOut,
-    el.holeEnabled, el.holeDia, el.holeEdge, el.holeGap, el.holeAngle, el.holePush,
-    el.qrEnabled, el.qrText, el.qrEcc, el.qrPlate, el.qrMargin, el.qrSize, el.qrDepth,
-  ];
   el.text.addEventListener('input', renderLineShifts);
-  for (const input of live) input.addEventListener('input', schedule);
-  el.qrEnabled.addEventListener('change', () => {
-    // Show the back when the QR turns on, so it's the first thing they see.
-    if (el.qrEnabled.checked) setView('back');
+  // Every control rebuilds the keychain when it changes (the number boxes ride on their sliders).
+  for (const input of document.querySelectorAll('main input, main select, main textarea')) {
+    if (!input.id || input.type === 'file' || input.classList.contains('numval') || input.dataset.static !== undefined) continue;
+    input.addEventListener('input', schedule);
+  }
+  el.backKind.addEventListener('change', () => {
+    // Show the back when something goes on it, so it's the first thing they see.
+    if (el.backKind.value !== 'none') setView('back');
     else if (el.viewBack.classList.contains('active')) setView('top');
   });
-  for (const input of [el.colorText, el.colorOutline, el.colorBase, el.colorQr, el.qrAuto]) {
-    input.addEventListener('input', () => {
-      preview.setColors(colors());
-      schedule(); // refreshes the QR note (light-on-dark or not)
-    });
+  for (const input of [el.colorText, el.colorOutline, el.colorOutline2, el.colorOutline3, el.colorBase, el.colorBack, el.backAuto]) {
+    input.addEventListener('input', () => preview.setColors(colors()));
   }
   el.viewTop.addEventListener('click', () => setView('top'));
   el.view3d.addEventListener('click', () => setView('3d'));

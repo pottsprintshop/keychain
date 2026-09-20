@@ -10,7 +10,7 @@ import {
   treeToPolys, roundPaths, simplifyPolys, polysToPaths, circlePoints, pathsBBox, rectPath, squarePath, plateRing,
 } from './clip.js';
 import { layoutText, widestLine, transformContours, flattenContour, bboxOfPolylines, NOMINAL } from './layout.js';
-import { makeQr } from './qr.js';
+import { layoutBack } from './back.js';
 
 const FLATTEN_TOL = 0.01; // mm, glyph curve flattening for the final polygons
 const FIT_TOL = 0.05; // nominal units, coarse flattening used only while fitting
@@ -42,29 +42,47 @@ export const DEFAULTS = {
   lineShifts: [], // per-line sideways nudge, % of the widest line
   lineShiftsY: [], // per-line vertical nudge, % of the font size
   fixed: null, // while dragging a line: the previous build's `layout`, so nothing re-fits or re-centres
-  qrEnabled: false, // a QR code on the back
+  // Extra outline rings, each one further out from the text (ring 1 is `outline`/`midH` above).
+  rings: 1, // 1..3
+  ring2W: 0.8,
+  ring2H: 0.6,
+  ring3W: 0.8,
+  ring3H: 0.6,
+  // The back: nothing, a QR code, text, or the artwork. A body recessed flush into the underside of the base.
+  backKind: 'none', // 'none' | 'qr' | 'text' | 'art'
+  backText: '',
+  backSize: 0, // longest side of the content in mm (a QR plate: the plate's side); 0 = as big as fits
+  backMargin: 1.2, // the content keeps at least this far (mm) from the base's edge, and from the key hole
+  backDepth: 0.6, // how deep it is recessed into the base (mm)
   qrText: '',
   qrEcc: 'M', // error correction: L, M, Q or H
   qrPlate: false, // false: just the code's modules, in a color that contrasts with the base; true: modules on a plate
-  qrSize: 0, // side of the code in mm (with a plate: the plate's side); 0 = as big as fits
-  qrMargin: 1.2, // the code keeps at least this far (mm) from the base's edge, and from the key hole
-  qrDepth: 0.6, // how deep the QR plate is recessed into the base (mm)
+  art: null, // traced artwork ({ contours, aspect }), see art.js
 };
 
-const QR_QUIET = 2; // border around the code when it's on a plate, in modules
-const QR_MIN_MODULE = 0.8; // smaller than this won't print reliably on a 0.4 mm nozzle
-const QR_GAP = 0.02; // dark modules shrink by this (mm) so ones touching only at a corner don't pinch
-
 // ---- Key hole placement -----------------------------------------------------
+
+// The outline rings, nearest the text first: how far each extends from the text, and how tall it is.
+export function ringDefs(p) {
+  const n = Math.min(3, Math.max(1, Math.round(p.rings)));
+  const widths = [p.outline, p.ring2W, p.ring3W];
+  const heights = [p.midH, p.ring2H, p.ring3H];
+  let offset = 0;
+  return Array.from({ length: n }, (_, i) => {
+    offset += widths[i];
+    return { index: i + 1, key: i === 0 ? 'outline' : `outline${i + 1}`, name: i === 0 ? 'Outline' : `Outline ${i + 1}`, offset, h: heights[i] };
+  });
+}
 
 function holeMetrics(p) {
   const R = p.holeDia / 2;
   const Rt = R + p.holeEdge; // tab radius
-  const M = p.outline + p.baseMargin;
+  const O = ringDefs(p).at(-1).offset; // how far the outermost ring reaches from the text
+  const M = O + p.baseMargin;
   // The hole centre must be at least this far from the text so the hole clears the
   // outline layer, but no further than this or the tab stops overlapping the base.
   const attachMax = Rt + M - 1;
-  const need = Math.max(R + p.outline + 0.1, Math.min(R + p.holeGap + p.outline, attachMax));
+  const need = Math.max(R + O + 0.1, Math.min(R + p.holeGap + O, attachMax));
   return { R, Rt, M, need, reach: Math.max(0, attachMax - need) };
 }
 
@@ -141,65 +159,6 @@ export function angleForHeight(track, side, frac) {
 }
 
 
-// ---- QR code on the back ------------------------------------------------------
-
-// Lay a QR code on the back of the base, centred on `body` (the base's bounding box, not counting the key
-// hole tab). It's as big as fits while staying `qrMargin` from the base's edge, so it grows and shrinks
-// smoothly with the keychain. Seen from the back it reads correctly (the pattern is mirrored left-right in
-// model space). Returns the light body as paths.
-function layoutQr(qr, basePunchedPaths, body, p, warnings) {
-  const { cx, cy } = body;
-  const quiet = p.qrPlate ? QR_QUIET : 0; // a plate needs a border; the bare code doesn't
-  const cells = qr.n + 2 * quiet;
-  // (plus the tolerance the final outline is simplified by, so the margin is a true minimum)
-  const inner = allPaths(offsetTree(basePunchedPaths, -(Math.max(0, p.qrMargin) + SIMPLIFY_EPS)));
-  const fits = (side) => treeToPolys(runClipper(CL.ClipType.ctDifference, [squarePath(cx, cy, side)], inner)).length === 0;
-
-  let side;
-  if (p.qrSize > 0) {
-    side = p.qrSize;
-    if (!fits(side)) warnings.push('The QR code is bigger than the back of the keychain (or closer to its edge than the margin), so part of it may hang off.');
-  } else {
-    let lo = 0, hi = Math.min(body.w, body.h);
-    for (let i = 0; i < 18; i++) {
-      const mid = (lo + hi) / 2;
-      if (fits(mid)) lo = mid; else hi = mid;
-    }
-    side = Math.max(0, lo - 0.002); // a hair under, so rounding to whole microns never eats the margin
-  }
-  const module = side / cells;
-  if (!(module > 0)) return null;
-  if (module < QR_MIN_MODULE) {
-    warnings.push(
-      `The QR modules are only ${module.toFixed(2)} mm — too small to print reliably. Use a shorter link, lower error correction, a smaller edge margin, a bigger keychain${p.baseShape === 'plate' ? '' : ', or the Rectangle base shape'}.`,
-    );
-  }
-
-  // Grid lines in integer microns, so neighbouring modules share exact edges.
-  const gx = [], gy = [];
-  for (let k = 0; k <= cells; k++) {
-    gx.push(Math.round((cx - side / 2 + k * module) * SCALE));
-    gy.push(Math.round((cy + side / 2 - k * module) * SCALE)); // row 0 is the top
-  }
-  const dark = [];
-  for (let r = 0; r < qr.n; r++) {
-    for (let c = 0; c < qr.n; c++) {
-      if (!qr.isDark(r, c)) continue;
-      const col = quiet + (qr.n - 1 - c); // mirrored: it's on the back
-      const row = quiet + r;
-      dark.push([{ X: gx[col], Y: gy[row + 1] }, { X: gx[col + 1], Y: gy[row + 1] }, { X: gx[col + 1], Y: gy[row] }, { X: gx[col], Y: gy[row] }]);
-    }
-  }
-  const plate = [[{ X: gx[0], Y: gy[cells] }, { X: gx[cells], Y: gy[cells] }, { X: gx[cells], Y: gy[0] }, { X: gx[0], Y: gy[0] }]];
-  // Shrink the modules a hair: two that touch only at a corner would make a pinched, invalid face.
-  const darkShrunk = allPaths(offsetTree(allPaths(unionTree(dark)), -QR_GAP, CL.JoinType.jtMiter));
-  // The QR body is just the code's modules, in a color that contrasts with the base: no plate, no border
-  // (the base around it is the quiet zone). On a dark base that's a light-on-dark (negative) code; on a
-  // light base it's the usual dark-on-light. With `qrPlate`, it's a plate with the modules left as base.
-  const light = p.qrPlate ? allPaths(runClipper(CL.ClipType.ctDifference, plate, darkShrunk)) : darkShrunk;
-  return { light, side, module, cells, n: qr.n, quiet };
-}
-
 // Which line of text is under (x, y)? An exact hit on the letters wins; otherwise the nearest line
 // whose (slightly padded) box contains the point. Returns the line number or -1.
 export function pickLine(lines, x, y, pad = 1.5) {
@@ -232,7 +191,8 @@ export function buildKeychain(font, params) {
   if (!raw.length) return null;
 
   const warnings = [];
-  const M = p.outline + p.baseMargin;
+  const rings = ringDefs(p);
+  const M = rings.at(-1).offset + p.baseMargin;
   const coarse = raw.map((c) => flattenContour(c, FIT_TOL));
   const ink = bboxOfPolylines(coarse);
   if (!(ink.w > 0) || !(ink.h > 0)) return null;
@@ -332,8 +292,8 @@ export function buildKeychain(font, params) {
   const inkTree = unionTree(fine.map(toPath));
   const inkPaths = allPaths(inkTree);
   const textPolys = treeToPolys(inkTree);
-  // The outline layer stays a pure offset of the text; only the base gets fillets.
-  const midPolys = simplifyPolys(treeToPolys(offsetTree(inkPaths, p.outline)));
+  // The outline rings stay pure offsets of the text; only the base gets fillets.
+  const ringPolys = rings.map((r) => simplifyPolys(treeToPolys(offsetTree(inkPaths, r.offset))));
   let basePaths;
   if (plateMode) {
     const { hw, hh } = halfBox(sx, sy, true);
@@ -366,33 +326,43 @@ export function buildKeychain(font, params) {
   }
 
   const width = b.x1 - b.x0, height = b.y1 - b.y0;
-  const z1 = p.baseH, z2 = p.baseH + p.midH, z3 = p.baseH + p.midH + p.textH;
+  // Stack, bottom to top: the base, the outer rings down to ring 1, then the text.
+  const z1 = p.baseH;
+  let zTop = z1;
+  const ringLayers = [];
+  for (let i = rings.length - 1; i >= 0; i--) {
+    ringLayers.push({ key: rings[i].key, name: rings[i].name, polys: ringPolys[i], z0: zTop, z1: zTop + rings[i].h });
+    zTop += rings[i].h;
+  }
+  const zText0 = zTop, z3 = zTop + p.textH;
 
-  // Optional QR code on the back: a light plate recessed flush into the underside of the base.
-  let qr = null;
-  let qrLayer = null;
+  // Optional back content (QR code, text or artwork): a body recessed flush into the underside of the base.
+  let back = null;
+  let backLayer = null;
   let baseLayers = [{ key: 'base', name: 'Base', polys: basePolys, z0: 0, z1 }];
   let baseLowerPlain = null;
-  if (p.qrEnabled && p.qrText.trim()) {
+  if (p.backKind !== 'none') {
     try {
-      const code = makeQr(p.qrText, p.qrEcc);
-      const depth = Math.max(0.2, Math.min(p.qrDepth, p.baseH - 0.2));
-      const laid = layoutQr(code, basePunchedPaths, bodyBounds, p, warnings);
+      const laid = layoutBack({ p, font, art: p.art, basePunchedPaths, body: bodyBounds, warnings });
       if (laid) {
+        const depth = Math.max(0.2, Math.min(p.backDepth, p.baseH - 0.2));
         // The lower slab starts from the very same simplified outline as the upper slab (basePolys), so their
         // edges line up exactly where they meet and the STL export can join them into one closed shell.
         const lightPolys = treeToPolys(unionTree(laid.light));
         const lowerPolys = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePolys), laid.light));
-        baseLowerPlain = treeToPolys(runClipper(CL.ClipType.ctDifference, basePaths, laid.light));
+        baseLowerPlain = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePlain), laid.light)); // (simplified, like the upper slab: dense outlines make the bore boolean invalid)
         baseLayers = [
           { key: 'base', name: 'Base', polys: lowerPolys, z0: 0, z1: depth },
           { key: 'base', name: 'Base', polys: basePolys, z0: depth, z1 },
         ];
-        qrLayer = { key: 'qr', name: 'QR code', polys: lightPolys, z0: 0, z1: depth };
-        qr = { n: laid.n, cells: laid.cells, module: laid.module, side: laid.side, depth, ecc: p.qrEcc, plate: p.qrPlate, margin: p.qrMargin, quiet: laid.quiet, cx: bodyBounds.cx, cy: bodyBounds.cy };
+        backLayer = { key: 'back', name: laid.name, polys: lightPolys, z0: 0, z1: depth };
+        const { light, ...info } = laid;
+        back = { ...info, depth, margin: p.backMargin, cx: bodyBounds.cx, cy: bodyBounds.cy };
       }
     } catch (err) {
-      warnings.push(`Can't make that QR code: ${err.message || err}. Try shorter text or lower error correction.`);
+      warnings.push(p.backKind === 'qr'
+        ? `Can't make that QR code: ${err.message || err}. Try shorter text or lower error correction.`
+        : `Can't make the back: ${err.message || err}.`);
     }
   }
 
@@ -416,11 +386,11 @@ export function buildKeychain(font, params) {
     scale: { x: sx, y: sy },
     layers: [
       ...baseLayers,
-      { key: 'outline', name: 'Outline', polys: midPolys, z0: z1, z1: z2 },
-      { key: 'text', name: 'Text', polys: textPolys, z0: z2, z1: z3 },
-      ...(qrLayer ? [qrLayer] : []),
+      ...ringLayers,
+      { key: 'text', name: 'Text', polys: textPolys, z0: zText0, z1: z3 },
+      ...(backLayer ? [backLayer] : []),
     ],
-    qr,
+    back,
     // Extras the STEP export uses to build exact curves and a true circular hole.
     exact: { contours, basePlain, baseLowerPlain, hole, holeTrack: holeTrackShifted },
     warnings,

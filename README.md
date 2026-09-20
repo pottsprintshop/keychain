@@ -26,21 +26,26 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
 
 ## Controls
 
-- **Text** — multi-line (Enter starts a new line), alignment, line spacing, and left/right and
-  up/down sliders for each line. In the Top view you can also drag a line of text directly; the
-  keychain re-fits to your size when you let go.
+- **Text** — multi-line (Enter starts a new line), alignment, line spacing, and a left/right and an
+  up/down slider for each line, side by side. In the Top view you can also drag a line of text
+  directly; the keychain re-fits to your size when you let go.
 - **Font** — the bundled fonts (see `fonts/fonts.json`), or **Upload font…** (TTF / OTF / WOFF)
-  for the current session only.
-- **Size** — width and height in inches or mm. *Keep font proportions* fits the text inside the
-  box; *Stretch text to fill* fills it exactly. By default the size is the keychain body and the
-  key hole tab sticks out beyond it; tick *Count the key hole tab in the size* to include it.
+  for the current session only. Font, alignment and upload share a line.
+- **Size** (in the right column, under the preview) — width and height in inches or mm, and **Text
+  size**: the text as a share of the biggest that fits, independent of the other dimensions. On a
+  plate shape the keychain keeps its width and height and the text gets more room around it; when the
+  base follows the text, smaller text makes a smaller keychain. Under *Nerd Shite*: *Keep font
+  proportions* fits the text inside the box and *Stretch text to fill* fills it exactly; by default the
+  size is the keychain body and the key hole tab sticks out beyond it, and *Count the key hole tab in
+  the size* includes it.
 - **Layers** — color (preview and STEP), height, and how far the outline / base extend.
   *Base shape* is *Follow the text* or a plate that fills the whole width × height you set: *Rectangle*
   (with a corner radius), *Round / oval* (a circle when width = height), *Hexagon* (points left and right,
   corners rounded by the same radius) or *Dog bone* (a shaft with two knobs at each end; *Shaft thickness*
   sets how much room the text gets). On a plate the text is scaled to the biggest size that keeps the full
   outline + base margin inside the shape, and the key hole slides along the shape's edge (on the dog
-  bone it starts in the notch). *Solid base* fills the gaps between letters. *Blend inside corners* / *Round outside corners*
+  bone it starts in the middle of the top edge, between the knobs, and picking another shape moves it to
+  that shape's usual spot unless you've moved it yourself). *Solid base* fills the gaps between letters. *Blend inside corners* / *Round outside corners*
   put fillets on the base (default 1 mm blend where the key hole tab joins the body); the outline
   and text are never altered.
 - **Key hole** — diameter, edge distance, and where it sits: quick Left / Top / Right / Bottom

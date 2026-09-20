@@ -273,6 +273,39 @@ test('round, hexagon and dog bone bases: fill the size, keep the text inside wit
   return `${n} designs`;
 });
 
+test('text size shrinks the text on its own: plates keep their size, a base that follows the text follows it', () => {
+  const f = font(/Carter/);
+  const textArea = (m) => netArea(m.layers.find((l) => l.key === 'text').polys);
+  for (const shape of ['plate', 'round', 'hex', 'dogbone']) {
+    const full = build(f, { baseShape: shape, holeEnabled: false });
+    const half = build(f, { baseShape: shape, holeEnabled: false, textSize: 0.5 });
+    near(half.size.w, full.size.w, 0.05, `${shape}: width unchanged`);
+    near(half.size.h, full.size.h, 0.05, `${shape}: height unchanged`);
+    near(half.scale.x / full.scale.x, 0.5, 1e-6, `${shape}: the text is half as big`);
+    near(textArea(half) / textArea(full), 0.25, 0.01, `${shape}: a quarter of the ink`);
+    // and it stays centred, with at least the full margin
+    const base = half.layers.find((l) => l.key === 'base').polys;
+    for (const p of half.layers.find((l) => l.key === 'text').polys) for (const [x, y] of p.outer) assert(insidePolys(x, y, base), `${shape}: text inside the base`);
+  }
+  const whole = build(f, { holeEnabled: false }), small = build(f, { holeEnabled: false, textSize: 0.5 });
+  assert(small.size.w < whole.size.w * 0.7, `a base that follows the text shrinks with it (${small.size.w} vs ${whole.size.w})`);
+  near(build(f, { textSize: 3 }).scale.x, build(f).scale.x, 1e-9, 'the text is never bigger than the biggest that fits');
+});
+
+test('dog bone: the key hole in the middle of the top edge clears the text and nests between the knobs', () => {
+  const f = font(/Carter/);
+  for (const shaft of [0.3, 0.4, 0.5, 0.65, 0.8]) {
+    const m = build(f, { baseShape: 'dogbone', boneShaft: shaft, holeAngle: 90 });
+    const h = m.exact.hole;
+    const text = m.layers.find((l) => l.key === 'text');
+    assert(distToRings(h.cx, h.cy, ringsOf(text.polys)) >= h.need - 0.05, `shaft ${shaft}: hole too close to the text`);
+    near(h.cx, 0, 0.05, `shaft ${shaft}: hole is in the middle`);
+    const base = m.layers.filter((l) => l.key === 'base').flatMap((l) => l.polys);
+    assert(base.length === 1 && base[0].holes.length === 1, `shaft ${shaft}: one piece with one hole`);
+    if (shaft <= 0.5) near(m.size.h, 38.1, 0.05, `shaft ${shaft}: the tab sits between the knobs, so the height is unchanged`);
+  }
+});
+
 test('line offsets move a line relative to the others; a frozen layout rebuilds identically', () => {
   const f = font(/Carter/);
   const m0 = build(f);

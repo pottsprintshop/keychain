@@ -23,6 +23,7 @@ export const DEFAULTS = {
   width: 63.5, // 2.5"
   height: 38.1, // 1.5"
   fit: 'contain', // 'contain' keeps the font's proportions, 'stretch' fills the box
+  textSize: 1, // 0.05..1: the text as a fraction of the biggest size that fits (a smaller keychain if the base follows the text)
   sizeIncludesTab: false, // false: width x height is the body; the key hole tab sticks out beyond it
   textH: 0.6,
   midH: 0.6,
@@ -346,6 +347,13 @@ export function buildKeychain(font, params) {
     sx = nsx;
     sy = nsy;
     if (done) break;
+  }
+  // The text size setting shrinks the text on its own: a plate keeps its width x height and just has more room
+  // around the text (a base that follows the text follows it down).
+  if (!p.fixed) {
+    const k = Math.min(1, Math.max(0.05, Number(p.textSize) || 1));
+    sx *= k;
+    sy *= k;
   }
   if (sx < MIN_SCALE || sy < MIN_SCALE) {
     warnings.push('The size is too small for the outline, base and key hole — text is clamped to a tiny size.');

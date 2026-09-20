@@ -17,7 +17,7 @@
 
 <main>
   <div class="controls">
-    <section class="panel">
+    <section class="panel" id="panelText">
       <h2>Text</h2>
       <textarea id="text" rows="2" spellcheck="false" placeholder="Type your text"></textarea>
       <p class="hint">Press Enter to start a new line.</p>
@@ -31,12 +31,10 @@
             <option value="right">Right</option>
           </select>
         </label>
-      </div>
-      <div class="control-row">
-        <button type="button" id="fontBtn" class="secondary">Upload font&hellip;</button>
+        <button type="button" id="fontBtn" class="secondary field-btn" title="Upload a TTF, OTF or WOFF font (kept for this session only)">Upload font&hellip;</button>
         <input type="file" id="fontFile" accept=".ttf,.otf,.woff" hidden>
-        <span id="fontNote" class="hint">TTF, OTF or WOFF &mdash; used for this session only.</span>
       </div>
+      <p class="hint" id="fontNote"></p>
       <div class="slider-row">
         <label for="lineSpacing">Line spacing</label>
         <span class="val"><input type="number" class="numval" id="lineSpacingNum" min="0.5" max="1.6" step="0.05" aria-label="Line spacing value"><span class="unit">&times;</span></span>
@@ -83,44 +81,21 @@
           <label><input type="checkbox" id="artInvert" data-static> Trace the light areas (invert)</label>
           <label><input type="checkbox" id="artDenoise" data-static> Reduce noise</label>
         </div>
-        <div class="slider-row">
-          <label for="artShiftX">Left / right</label>
-          <span class="val"><input type="number" class="numval" id="artShiftXNum" min="-100" max="100" step="1" aria-label="Artwork left or right"><span class="unit">%</span></span>
-          <input type="range" id="artShiftX" min="-100" max="100" step="any" value="0">
-        </div>
-        <div class="slider-row">
-          <label for="artShiftY">Up / down</label>
-          <span class="val"><input type="number" class="numval" id="artShiftYNum" min="-100" max="100" step="1" aria-label="Artwork up or down"><span class="unit">%</span></span>
-          <input type="range" id="artShiftY" min="-100" max="100" step="any" value="0">
+        <div class="slider-pair">
+          <div class="slider-row">
+            <label for="artShiftX">Left / right</label>
+            <span class="val"><input type="number" class="numval" id="artShiftXNum" min="-100" max="100" step="1" aria-label="Artwork left or right"><span class="unit">%</span></span>
+            <input type="range" id="artShiftX" min="-100" max="100" step="any" value="0">
+          </div>
+          <div class="slider-row">
+            <label for="artShiftY">Up / down</label>
+            <span class="val"><input type="number" class="numval" id="artShiftYNum" min="-100" max="100" step="1" aria-label="Artwork up or down"><span class="unit">%</span></span>
+            <input type="range" id="artShiftY" min="-100" max="100" step="any" value="0">
+          </div>
         </div>
         <p class="hint" id="artInfo"></p>
       </div>
       <p class="hint">Artwork stays in your browser, so it can&rsquo;t be part of a shared link. Use it on the back too (Back &rarr; The artwork).</p>
-    </section>
-
-    <section class="panel">
-      <h2>Size</h2>
-      <div class="fields">
-        <label>Width <input type="number" id="width" min="1" step="0.1"></label>
-        <label>Height <input type="number" id="height" min="1" step="0.1"></label>
-        <label>Units
-          <select id="unit">
-            <option value="in" selected>in</option>
-            <option value="mm">mm</option>
-          </select>
-        </label>
-      </div>
-      <div class="control-row">
-        <label for="fit">Fit</label>
-        <select id="fit">
-          <option value="contain" selected>Keep font proportions</option>
-          <option value="stretch">Stretch text to fill</option>
-        </select>
-      </div>
-      <div class="control-row checkbox-row">
-        <label><input type="checkbox" id="sizeIncludesTab"> Count the key hole tab in the size</label>
-      </div>
-      <p class="hint" id="finalSize">&nbsp;</p>
     </section>
 
     <section class="panel">
@@ -338,6 +313,39 @@
       </div>
       <div id="preview" class="preview-canvas"></div>
       <p class="hint" id="status">Loading&hellip;</p>
+    </section>
+
+    <section class="panel" id="panelSize">
+      <h2>Size</h2>
+      <div class="fields compact">
+        <label>Width <input type="number" id="width" min="1" step="0.1"></label>
+        <label>Height <input type="number" id="height" min="1" step="0.1"></label>
+        <label>Units
+          <select id="unit">
+            <option value="in" selected>in</option>
+            <option value="mm">mm</option>
+          </select>
+        </label>
+      </div>
+      <div class="slider-row">
+        <label for="textSize" title="A share of the biggest text that fits. On a plate shape the keychain keeps its width and height and the text gets more room around it; when the base follows the text, smaller text makes a smaller keychain.">Text size</label>
+        <span class="val"><input type="number" class="numval" id="textSizeNum" min="20" max="100" step="1" aria-label="Text size, percent of the biggest that fits"><span class="unit">%</span></span>
+        <input type="range" id="textSize" min="20" max="100" step="any" value="100">
+      </div>
+      <p class="hint" id="finalSize">&nbsp;</p>
+      <details class="nerd-menu" id="nerdSize">
+        <summary>Nerd Shite</summary>
+        <div class="control-row">
+          <label for="fit">Fit</label>
+          <select id="fit">
+            <option value="contain" selected>Keep font proportions</option>
+            <option value="stretch">Stretch text to fill</option>
+          </select>
+        </div>
+        <div class="control-row checkbox-row">
+          <label><input type="checkbox" id="sizeIncludesTab"> Count the key hole tab in the size</label>
+        </div>
+      </details>
     </section>
 
     <section class="panel">

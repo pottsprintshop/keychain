@@ -611,6 +611,55 @@ test('QR codes decode on round and hexagon bases too', () => {
   return `${n} decodes`;
 });
 
+test('artwork trace options: Sharpen corners squares up small shapes, Smooth lines rounds edges into short lines', async () => {
+  const makeSource = async (w, h, draw) => {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.fillStyle = '#000';
+    draw(g);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+    return loadArtSource(new File([blob], 'x.png', { type: 'image/png' }));
+  };
+  const base = { threshold: 128, detail: 7, invert: false, denoise: false };
+  const area = (a) => a.contours.reduce((t, c) => {
+    const P = [c.start, ...c.segs.map((sg) => [sg[sg.length - 2], sg[sg.length - 1]])];
+    let s2 = 0;
+    P.forEach(([x1, y1], i) => { const [x2, y2] = P[(i + 1) % P.length]; s2 += x1 * y2 - x2 * y1; });
+    return t + Math.abs(s2 / 2);
+  }, 0);
+  const points = (a) => a.contours.flatMap((c) => [c.start, ...c.segs.map((sg) => [sg[sg.length - 2], sg[sg.length - 1]])]);
+
+  // Two small squares: with the corners sharpened they fill more of their box than with them left rounded.
+  const tiny = await makeSource(100, 60, (g) => { g.fillRect(20, 20, 14, 14); g.fillRect(60, 22, 9, 9); });
+  const sharp = await traceArt(tiny, base), soft = await traceArt(tiny, { ...base, sharpen: false });
+  assert(area(sharp) > area(soft) * 1.03, `sharpened ${area(sharp).toFixed(3)} vs left rounded ${area(soft).toFixed(3)}`);
+  assert(area(await traceArt(tiny, { ...base, sharpen: true })) === area(sharp), 'sharpen is on by default');
+
+  // A rectangle: smoothing turns it into a rounded one made only of lines, corners cut, box unchanged.
+  const box = await makeSource(400, 300, (g) => g.fillRect(100, 100, 200, 100));
+  const plain = await traceArt(box, base), smooth = await traceArt(box, { ...base, smooth: true });
+  const count = (a) => a.contours.reduce((t, c) => t + c.segs.length, 0);
+  assert(smooth.contours.every((c) => c.segs.every((sg) => sg[0] === 'L')), 'smoothed outlines are all lines');
+  assert(count(smooth) > count(plain) * 2 && count(smooth) < 200, `${count(plain)} -> ${count(smooth)} segments`);
+  near(smooth.aspect, plain.aspect, 0.02, 'the box stays the same');
+  const corners = [[-1, 1], [1, 1], [1, 0], [-1, 0]];
+  const nearest = Math.min(...corners.flatMap(([cx, cy]) => points(smooth).map(([x, y]) => Math.hypot(x - cx, y - cy))));
+  assert(nearest > 0.1, `the corners are cut (nearest point ${nearest.toFixed(3)} away)`);
+  // (Chaikin cuts a quarter off every edge at each corner, so a few-cornered shape rounds off a good deal: that is what img2cad's Smooth lines does too)
+  assert(area(smooth) < area(plain) * 0.95 && area(smooth) > area(plain) * 0.6, `the corners are cut off (${(area(smooth) / area(plain)).toFixed(2)} of the area left)`);
+
+  // A smoothed trace still builds into clean, watertight bodies (front artwork on its own).
+  const f = font(/Carter/);
+  const m = build(f, { text: 'x', art: smooth, artMode: 'only', artLines: 2, baseShape: 'plate' });
+  for (const file of stlFilesFromModel(m, 't')) {
+    const st = stlStats(file.data), exp = volumeOf(m, file.key);
+    assert(st.open === 0, `${file.key}: ${st.open} open edges`);
+    near(st.vol / exp, 1, 0.001, `${file.key} volume`);
+  }
+});
+
 test('artwork traces (holes kept) and fits on the front and back', async () => {
   const c = document.createElement('canvas');
   c.width = 400;

@@ -97,8 +97,12 @@ the keychain over like a page and it reads correctly (the pattern is mirrored in
 ## Artwork
 
 Choose a PNG, JPG or SVG in the **Artwork** panel. It's flattened onto white, thresholded and traced
-with ImageTracer (the same approach as img2cad), so holes are kept and curves stay curves. Threshold,
-detail, invert and noise controls have a live thumbnail. On the front it goes above the text, below it,
+with ImageTracer (the same approach as img2cad), so holes are kept and curves stay curves. Threshold and
+detail have a live thumbnail; under *Nerd Shite* are the options img2cad has: trace the light areas (invert),
+**Sharpen corners** (on by default; keeps small squares square), **Smooth lines** (Chaikin corner-cutting, off
+by default: it rounds jagged pixel edges into smooth lines, and rounds real corners too, so it is for
+photo-ish or low-resolution pictures) and reduce noise. (This is its own copy of those ideas; img2cad and
+this page don't share code.) On the front it goes above the text, below it,
 or instead of it (with a height in lines of text and left/right and up/down nudges), and gets its outline
 rings and base like text does. On the back use **Back → The artwork**. Artwork stays in your browser, so
 it can't be part of a shared link.

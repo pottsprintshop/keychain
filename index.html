@@ -83,10 +83,17 @@
             <input type="range" id="artDetail" min="0" max="10" step="any" value="7" data-static>
           </div>
         </div>
-        <div class="control-row checkbox-row">
-          <label><input type="checkbox" id="artInvert" data-static> Trace the light areas (invert)</label>
-          <label><input type="checkbox" id="artDenoise" data-static> Reduce noise</label>
-        </div>
+        <details class="nerd-menu" id="nerdArt">
+          <summary>Nerd Shite</summary>
+          <div class="control-row checkbox-row">
+            <label><input type="checkbox" id="artInvert" data-static> Trace the light areas (invert)</label>
+            <label><input type="checkbox" id="artSharpen" data-static checked> Sharpen corners</label>
+          </div>
+          <div class="control-row checkbox-row">
+            <label><input type="checkbox" id="artSmooth" data-static> Smooth lines</label>
+            <label><input type="checkbox" id="artDenoise" data-static> Reduce noise</label>
+          </div>
+        </details>
         <div class="slider-pair">
           <div class="slider-row">
             <label for="artShiftX">Left / right</label>

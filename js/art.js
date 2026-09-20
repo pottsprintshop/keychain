@@ -5,8 +5,48 @@
 // of 1 with the bottom at y = 0 and centred on x = 0, so they can be placed like a line of text.
 
 import { flattenContour, bboxOfPolylines, NOMINAL } from './layout.js';
+import { simplifyRing } from './clip.js';
 
 const MAX_DIM = 700; // downscale big images before tracing, for speed
+const QUAD_STEPS = 8; // line segments per curve when smoothing
+const SMOOTH_PASSES = 2; // Chaikin passes
+const SMOOTH_KEEP = 0.3; // px: smoothed outlines are thinned back to within this of themselves, so they stay light
+
+// Chaikin corner-cutting on a closed ring: rounds the jagged edges a pixel trace leaves into smooth lines.
+function chaikin(ring, passes) {
+  let pts = ring;
+  for (let it = 0; it < passes; it++) {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % pts.length];
+      out.push([0.75 * x0 + 0.25 * x1, 0.75 * y0 + 0.25 * y1], [0.25 * x0 + 0.75 * x1, 0.25 * y0 + 0.75 * y1]);
+    }
+    pts = out;
+  }
+  return pts;
+}
+
+// A traced contour (curves and lines) -> a smoothed one made of short lines.
+function smoothContour(c) {
+  const pts = [c.start];
+  let cur = c.start;
+  for (const s of c.segs) {
+    if (s[0] === 'Q') {
+      for (let k = 1; k <= QUAD_STEPS; k++) {
+        const t = k / QUAD_STEPS, m = 1 - t;
+        pts.push([m * m * cur[0] + 2 * m * t * s[1] + t * t * s[3], m * m * cur[1] + 2 * m * t * s[2] + t * t * s[4]]);
+      }
+      cur = [s[3], s[4]];
+    } else {
+      pts.push([s[1], s[2]]);
+      cur = [s[1], s[2]];
+    }
+  }
+  if (pts.length > 1 && Math.hypot(pts[0][0] - cur[0], pts[0][1] - cur[1]) < 0.01) pts.pop(); // the ring closes by itself
+  if (pts.length < 3) return c;
+  const ring = simplifyRing(chaikin(pts, SMOOTH_PASSES), SMOOTH_KEEP);
+  return { start: ring[0], segs: ring.slice(1).map(([x, y]) => ['L', x, y]) };
+}
 
 let tracer = null;
 async function loadTracer() {
@@ -60,7 +100,8 @@ function despeckle(imgd, w, h) {
   }
 }
 
-// opts: { threshold 0-255, invert, detail 0-10, denoise } -> { contours, aspect } or null if nothing traced
+// opts: { threshold 0-255, invert, detail 0-10, denoise, sharpen (default true), smooth (default false) }
+//   -> { contours, aspect } or null if nothing traced
 export async function traceArt(source, opts) {
   const ImageTracer = await loadTracer();
   const scale = Math.min(1, MAX_DIM / Math.max(source.w, source.h));
@@ -89,7 +130,7 @@ export async function traceArt(source, opts) {
     pathomit: Math.round(60 - (detail / 10) * 58),
     ltres: tol,
     qtres: tol,
-    rightangleenhance: true,
+    rightangleenhance: opts.sharpen !== false, // "Sharpen corners"
     colorsampling: 0,
   });
   let fgIndex = 0, darkest = Infinity;
@@ -99,7 +140,7 @@ export async function traceArt(source, opts) {
   });
 
   // Paths -> contours (y-down image space for now), keeping the curves.
-  const raw = [];
+  let raw = [];
   for (const path of traced.layers[fgIndex] || []) {
     const segs = path.segments;
     if (!segs || segs.length < 2) continue;
@@ -109,6 +150,7 @@ export async function traceArt(source, opts) {
     });
   }
   if (!raw.length) return null;
+  if (opts.smooth) raw = raw.map(smoothContour); // "Smooth lines"
 
   // Normalize: height 1, bottom at y = 0, centred on x = 0, y up.
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;

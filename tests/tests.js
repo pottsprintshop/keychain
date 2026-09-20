@@ -325,6 +325,23 @@ test('QR codes decode when read from the back (light on dark, dark on light, pla
   return `${n} decodes`;
 });
 
+test('QR codes decode on round and hexagon bases too', () => {
+  const f = font(/Carter/);
+  let n = 0;
+  for (const shape of ['round', 'hex']) {
+    for (const ecc of ['L', 'M']) {
+      for (const [baseColor, backColor] of [['#16161a', '#f2f2f2'], ['#f2f2f2', '#16161a']]) {
+        const m = build(f, { baseShape: shape, width: 76, height: 66, backKind: 'qr', qrText: 'https://potts.co/inlaws', qrEcc: ecc });
+        assert(m.back && m.back.module >= 0.8, `${shape}: the QR modules are ${m.back && m.back.module}`);
+        const d = decodeBack(m, baseColor, backColor, 14, false);
+        assert(d && d.data === 'https://potts.co/inlaws', `${shape} ${ecc} ${baseColor}: ${d ? 'decoded ' + JSON.stringify(d.data) : 'did not decode'}`);
+        n++;
+      }
+    }
+  }
+  return `${n} decodes`;
+});
+
 test('artwork traces (holes kept) and fits on the front and back', async () => {
   const c = document.createElement('canvas');
   c.width = 400;

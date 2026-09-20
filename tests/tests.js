@@ -399,6 +399,26 @@ test('artwork traces (holes kept) and fits on the front and back', async () => {
   for (const l of [front, only, back].flatMap((m) => m.layers)) assert(stlStats(stlFilesFromModel({ layers: [l] }, 't')[0].data).open === 0, `${l.key} watertight`);
 });
 
+test('every control the app reads exists in index.html (and the panels are where they should be)', async () => {
+  const html = await (await fetch('../index.html', { cache: 'no-store' })).text();
+  const js = await (await fetch('../js/app.js', { cache: 'no-store' })).text();
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const ids = new Set([...doc.querySelectorAll('[id]')].map((e) => e.id));
+  const used = new Set([...js.matchAll(/\bel\.([A-Za-z][A-Za-z0-9]*)/g)].map((m) => m[1]));
+  for (const m of js.matchAll(/getElementById\('([^']+)'\)|\$\('([^']+)'\)/g)) used.add(m[1] || m[2]);
+  const missing = [...used].filter((id) => !ids.has(id));
+  assert(!missing.length, `app.js uses ids that index.html doesn't have: ${missing.join(', ')}`);
+  const dupes = [...doc.querySelectorAll('[id]')].map((e) => e.id).filter((id, i, all) => all.indexOf(id) !== i);
+  assert(!dupes.length, `duplicate ids: ${dupes.join(', ')}`);
+  // Where things live: shape above the preview, size under it, then the downloads.
+  const col = [...doc.querySelector('.preview-col').children].map((c) => c.id || c.className.split(' ')[0]);
+  assert(col.join() === 'panelShape,preview-box,panelSize,panel', `right column order: ${col.join()}`);
+  assert(doc.querySelector('#panelShape #baseShape') && doc.querySelector('#panelSize #width') && doc.querySelector('#nerdSize #fit') && doc.querySelector('#nerdSize #sizeIncludesTab'), 'shape, size and the Nerd Shite settings are in their panels');
+  const download = doc.querySelector('.download-row');
+  assert(['format', 'downloadBtn', 'copyLink'].every((id) => download.querySelector('#' + id)), 'download, format and copy link share a row');
+  return `${used.size} ids checked`;
+});
+
 test('a shareable link round-trips through the form', () => {
   const html = '<input id="text" value="Hi"><input id="w" type="number" value="2.5"><input id="c" type="color" value="#f3cf1c"><input id="chk" type="checkbox" checked><select id="s"><option value="a" selected>a</option><option value="b">b</option></select><input id="skip" data-noshare value="x"><input id="n" class="numval" value="1"><input id="f" type="file">';
   const make = () => { const d = document.createElement('div'); d.innerHTML = html; return d; };
@@ -420,7 +440,7 @@ test('batch: parses lists and makes a zip with a summary', async () => {
   const rows = parseBatch('Name,QR\nErich|Deutsch\n\n"A, B",https://x.co/b\nC\tsecond');
   assert(rows.length === 3 && rows[0].text === 'Erich\nDeutsch' && rows[1].text === 'A, B' && rows[1].extra === 'https://x.co/b' && rows[2].extra === 'second', JSON.stringify(rows));
   const f = font(/Carter/);
-  const res = await runBatch({ items: parseBatch('Erich|Deutsch,https://x.co/e\nColleen'), font: f, baseParams: { ...build(f).params, backKind: 'qr', baseShape: 'plate', qrText: 'https://x.co/default' }, format: 'stl', colors: {}, printSettings: PRINT_DEFAULTS, buildStep: null, onProgress() {}, shouldCancel: () => false });
+  const res = await runBatch({ items: parseBatch('Erich|Lizzie,https://x.co/e\nPotts'), font: f, baseParams: { ...build(f).params, backKind: 'qr', baseShape: 'plate', qrText: 'https://x.co/default' }, format: 'stl', colors: {}, printSettings: PRINT_DEFAULTS, buildStep: null, onProgress() {}, shouldCancel: () => false });
   const entries = zipEntries(new Uint8Array(await res.blob.arrayBuffer()));
   assert(res.count === 2 && entries.length === 9 && entries.some((e) => e.name === 'summary.csv'), `count ${res.count}, entries ${entries.length}`);
   assert(entries.filter((e) => e.name.endsWith('.stl')).every((e) => e.size > 1000), 'every STL has content');

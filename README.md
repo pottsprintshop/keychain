@@ -38,16 +38,17 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   proportions* fits the text inside the box and *Stretch text to fill* fills it exactly; by default the
   size is the keychain body and the key hole tab sticks out beyond it, and *Count the key hole tab in
   the size* includes it.
-- **Layers** — color (preview and STEP), height, and how far the outline / base extend.
-  *Base shape* is *Follow the text* or a plate that fills the whole width × height you set: *Rectangle*
-  (with a corner radius), *Round / oval* (a circle when width = height), *Hexagon* (points left and right,
-  corners rounded by the same radius) or *Dog bone* (a shaft with two knobs at each end; *Shaft thickness*
-  sets how much room the text gets). On a plate the text is scaled to the biggest size that keeps the full
-  outline + base margin inside the shape, and the key hole slides along the shape's edge (on the dog
-  bone it starts in the middle of the top edge, between the knobs, and picking another shape moves it to
-  that shape's usual spot unless you've moved it yourself). *Solid base* fills the gaps between letters. *Blend inside corners* / *Round outside corners*
-  put fillets on the base (default 1 mm blend where the key hole tab joins the body); the outline
-  and text are never altered.
+- **Layers** — color (preview and STEP), height, and how far the outline / base extend. *Solid base*
+  fills the gaps between letters, and *Blend inside corners* / *Round outside corners* put fillets on
+  the base (default 1 mm blend where the key hole tab joins the body); the outline and text are never
+  altered.
+- **Base shape** (above the preview) — *Follow the text* or a plate that fills the whole width × height
+  you set: *Rectangle* (with a corner radius), *Round / oval* (a circle when width = height), *Hexagon*
+  (points left and right, corners rounded by the same radius) or *Dog bone* (a shaft with two knobs at
+  each end; *Shaft thickness* sets how much room the text gets). On a plate the text is scaled to the
+  biggest size that keeps the full outline + base margin inside the shape, and the key hole slides
+  along the shape's edge. On the dog bone it starts in the middle of the top edge, between the knobs;
+  picking another shape moves it to that shape's usual spot unless you've moved it yourself.
 - **Key hole** — diameter, edge distance, and where it sits: quick Left / Top / Right / Bottom
   buttons, an *Around the edge* slider that slides it smoothly all the way around the keychain
   (180° = centered on the left), 20% / 50% / 80% height buttons, and *Sticks out* to pull it

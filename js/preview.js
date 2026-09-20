@@ -2,32 +2,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
-
-// A 0.1-0.2 micron deterministic nudge per vertex. Perfectly aligned holes (a QR code's modules all
-// share exact row edges) make the cap triangulator produce open edges; breaking the ties fixes that,
-// and 0.2 um is far below anything a printer can resolve.
-function nudge(x, y) {
-  const h = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
-  const g = Math.sin(x * 39.3468 + y * 11.135) * 24634.6345;
-  return [x + ((h - Math.floor(h)) - 0.5) * 2e-4, y + ((g - Math.floor(g)) - 0.5) * 2e-4];
-}
-
-function layerGeometry(polys, z0, z1) {
-  const v = ([x, y]) => new THREE.Vector2(...nudge(x, y));
-  const shapes = polys.map(({ outer, holes }) => {
-    const shape = new THREE.Shape(outer.map(v));
-    shape.holes = holes.map((h) => new THREE.Path(h.map(v)));
-    return shape;
-  });
-  const g = new THREE.ExtrudeGeometry(shapes, {
-    depth: z1 - z0,
-    bevelEnabled: false,
-    curveSegments: 1,
-    steps: 1,
-  });
-  g.translate(0, 0, z0);
-  return g;
-}
+import { layerGeometry } from './mesh.js';
 
 export function createPreview(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });

@@ -5,16 +5,15 @@
 // (integer arithmetic, so the offsets can't fail on awkward fonts); the exact
 // glyph curves are kept alongside for the STEP export.
 
-import '../vendor/clipper.js';
+import {
+  CL, SCALE, SIMPLIFY_EPS, toPath, fromPath, polyArea, runClipper, unionTree, offsetTree, allPaths, outerPaths,
+  treeToPolys, roundPaths, simplifyPolys, polysToPaths, circlePoints, pathsBBox, rectPath, squarePath, plateRing,
+} from './clip.js';
 import { layoutText, widestLine, transformContours, flattenContour, bboxOfPolylines, NOMINAL } from './layout.js';
 import { makeQr } from './qr.js';
 
-const CL = globalThis.ClipperLib;
-const SCALE = 1000; // Clipper works in integers: 1 unit = 1 micron
-const ARC_TOL = 4; // offset arc tolerance, microns
 const FLATTEN_TOL = 0.01; // mm, glyph curve flattening for the final polygons
 const FIT_TOL = 0.05; // nominal units, coarse flattening used only while fitting
-const MIN_AREA = 0.02; // mm^2, drop slivers smaller than this
 
 export const DEFAULTS = {
   text: 'Potts\nPrint Shop',
@@ -55,129 +54,6 @@ export const DEFAULTS = {
 const QR_QUIET = 2; // border around the code when it's on a plate, in modules
 const QR_MIN_MODULE = 0.8; // smaller than this won't print reliably on a 0.4 mm nozzle
 const QR_GAP = 0.02; // dark modules shrink by this (mm) so ones touching only at a corner don't pinch
-
-// ---- Clipper helpers -------------------------------------------------------
-
-const toPath = (pts) => pts.map(([x, y]) => ({ X: Math.round(x * SCALE), Y: Math.round(y * SCALE) }));
-const fromPath = (path) => path.map((p) => [p.X / SCALE, p.Y / SCALE]);
-
-function polyArea(pts) {
-  let a = 0;
-  for (let i = 0, n = pts.length; i < n; i++) {
-    const [x1, y1] = pts[i];
-    const [x2, y2] = pts[(i + 1) % n];
-    a += x1 * y2 - x2 * y1;
-  }
-  return a / 2;
-}
-
-function runClipper(type, subject, clip) {
-  const c = new CL.Clipper();
-  c.AddPaths(subject, CL.PolyType.ptSubject, true);
-  if (clip) c.AddPaths(clip, CL.PolyType.ptClip, true);
-  const tree = new CL.PolyTree();
-  const fill = CL.PolyFillType.pftNonZero;
-  c.Execute(type, tree, fill, fill);
-  return tree;
-}
-
-const unionTree = (paths) => runClipper(CL.ClipType.ctUnion, paths);
-
-function offsetTree(paths, deltaMM, join = CL.JoinType.jtRound) {
-  if (Math.abs(deltaMM) < 1e-9) return unionTree(paths);
-  const co = new CL.ClipperOffset(2, ARC_TOL);
-  co.AddPaths(paths, join, CL.EndType.etClosedPolygon);
-  const tree = new CL.PolyTree();
-  co.Execute(tree, deltaMM * SCALE);
-  return tree;
-}
-
-const allPaths = (tree) => CL.Clipper.PolyTreeToPaths(tree);
-
-// Fillets in 2D. Growing then shrinking rounds inside (concave) corners and closes
-// gaps narrower than 2r; shrinking then growing rounds outside (convex) corners.
-function roundPaths(paths, inside, outside) {
-  let cur = paths;
-  if (inside > 0) cur = allPaths(offsetTree(allPaths(offsetTree(cur, inside)), -inside));
-  if (outside > 0) cur = allPaths(offsetTree(allPaths(offsetTree(cur, -outside)), outside));
-  return cur;
-}
-const outerPaths = (tree) => tree.Childs().map((n) => n.Contour());
-
-// PolyTree -> [{ outer, holes }], in mm. Islands inside holes become new entries.
-function treeToPolys(tree) {
-  const out = [];
-  const visit = (node) => {
-    const outer = fromPath(node.Contour());
-    const holes = [];
-    for (const child of node.Childs()) {
-      holes.push(fromPath(child.Contour()));
-      for (const island of child.Childs()) visit(island);
-    }
-    const area = Math.abs(polyArea(outer)) - holes.reduce((t, h) => t + Math.abs(polyArea(h)), 0);
-    if (outer.length >= 3 && area >= MIN_AREA) out.push({ outer, holes });
-  };
-  for (const n of tree.Childs()) visit(n);
-  return out;
-}
-
-// Ramer-Douglas-Peucker on a closed ring: drops vertices that deviate less than eps (mm).
-// Keeps STEP files small — the offset outlines are dense arcs.
-function simplifyRing(pts, eps) {
-  const n = pts.length;
-  if (n < 12) return pts;
-  let far = 0, best = -1;
-  for (let i = 1; i < n; i++) {
-    const d = (pts[i][0] - pts[0][0]) ** 2 + (pts[i][1] - pts[0][1]) ** 2;
-    if (d > best) { best = d; far = i; }
-  }
-  const keep = new Uint8Array(n);
-  keep[0] = keep[far] = 1;
-  const stack = [[0, far], [far, n]]; // second run wraps back to point 0 via index n
-  const at = (i) => pts[i % n];
-  while (stack.length) {
-    const [a, b] = stack.pop();
-    if (b - a < 2) continue;
-    const [ax, ay] = at(a), [bx, by] = at(b);
-    const dx = bx - ax, dy = by - ay;
-    const len = Math.hypot(dx, dy);
-    let maxD = -1, idx = -1;
-    for (let i = a + 1; i < b; i++) {
-      const [px, py] = at(i);
-      const d = len > 0 ? Math.abs((px - ax) * dy - (py - ay) * dx) / len : Math.hypot(px - ax, py - ay);
-      if (d > maxD) { maxD = d; idx = i; }
-    }
-    if (maxD > eps) {
-      keep[idx % n] = 1;
-      stack.push([a, idx], [idx, b]);
-    }
-  }
-  return pts.filter((_, i) => keep[i]);
-}
-
-const SIMPLIFY_EPS = 0.015; // mm
-
-function simplifyPolys(polys, eps = SIMPLIFY_EPS) {
-  return polys.map(({ outer, holes }) => ({
-    outer: simplifyRing(outer, eps),
-    holes: holes.map((h) => simplifyRing(h, eps)).filter((h) => h.length >= 3),
-  }));
-}
-
-// Drop only exactly-collinear vertices (Clipper works in whole microns, so 0.5 um can't touch real
-// geometry). The cap triangulator drops them anyway, and leaving them in the side walls makes T-junctions.
-const dropCollinear = (polys) => simplifyPolys(polys, 0.0005);
-
-export function circlePoints(cx, cy, r, tol = 0.005) {
-  let n = Math.ceil(Math.PI / Math.acos(1 - Math.min(tol / r, 0.5)));
-  n = Math.max(48, n + (n % 2));
-  const pts = [];
-  for (let i = 0; i < n; i++) {
-    const a = (2 * Math.PI * i) / n;
-    pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
-  }
-  return pts;
-}
 
 // ---- Key hole placement -----------------------------------------------------
 
@@ -266,28 +142,6 @@ export function angleForHeight(track, side, frac) {
 
 
 // ---- QR code on the back ------------------------------------------------------
-
-// Bounding box of Clipper paths, in mm.
-const pathsBBox = (paths) => {
-  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-  for (const path of paths) for (const { X, Y } of path) { x0 = Math.min(x0, X); x1 = Math.max(x1, X); y0 = Math.min(y0, Y); y1 = Math.max(y1, Y); }
-  return { cx: (x0 + x1) / 2 / SCALE, cy: (y0 + y1) / 2 / SCALE, w: (x1 - x0) / SCALE, h: (y1 - y0) / SCALE };
-};
-
-const rectPath = (cx, cy, hw, hh) => {
-  const x0 = Math.round((cx - hw) * SCALE), x1 = Math.round((cx + hw) * SCALE);
-  const y0 = Math.round((cy - hh) * SCALE), y1 = Math.round((cy + hh) * SCALE);
-  return [{ X: x0, Y: y0 }, { X: x1, Y: y0 }, { X: x1, Y: y1 }, { X: x0, Y: y1 }];
-};
-
-// Outline of the rectangle base (centred, corners rounded), as a polyline in mm.
-const plateRing = (hw, hh, r) => fromPath(roundPaths([rectPath(0, 0, hw, hh)], 0, Math.min(r, hw, hh))[0]);
-
-const squarePath = (cx, cy, side) => {
-  const x0 = Math.round((cx - side / 2) * SCALE), x1 = Math.round((cx + side / 2) * SCALE);
-  const y0 = Math.round((cy - side / 2) * SCALE), y1 = Math.round((cy + side / 2) * SCALE);
-  return [{ X: x0, Y: y0 }, { X: x1, Y: y0 }, { X: x1, Y: y1 }, { X: x0, Y: y1 }];
-};
 
 // Lay a QR code on the back of the base, centred on `body` (the base's bounding box, not counting the key
 // hole tab). It's as big as fits while staying `qrMargin` from the base's edge, so it grows and shrinks
@@ -525,10 +379,11 @@ export function buildKeychain(font, params) {
       const depth = Math.max(0.2, Math.min(p.qrDepth, p.baseH - 0.2));
       const laid = layoutQr(code, basePunchedPaths, bodyBounds, p, warnings);
       if (laid) {
-        // (Only collinear vertices are dropped: the QR's features are tiny and rectilinear.)
-        const lightPolys = dropCollinear(treeToPolys(unionTree(laid.light)));
-        const lowerPolys = dropCollinear(treeToPolys(runClipper(CL.ClipType.ctDifference, basePunchedPaths, laid.light)));
-        baseLowerPlain = dropCollinear(treeToPolys(runClipper(CL.ClipType.ctDifference, basePaths, laid.light)));
+        // The lower slab starts from the very same simplified outline as the upper slab (basePolys), so their
+        // edges line up exactly where they meet and the STL export can join them into one closed shell.
+        const lightPolys = treeToPolys(unionTree(laid.light));
+        const lowerPolys = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePolys), laid.light));
+        baseLowerPlain = treeToPolys(runClipper(CL.ClipType.ctDifference, basePaths, laid.light));
         baseLayers = [
           { key: 'base', name: 'Base', polys: lowerPolys, z0: 0, z1: depth },
           { key: 'base', name: 'Base', polys: basePolys, z0: depth, z1 },

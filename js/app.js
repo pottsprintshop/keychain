@@ -1,7 +1,8 @@
 import { parseFont, fontDisplayName, NOMINAL } from './layout.js';
 import { buildKeychain, angleForHeight, pickLine, DEFAULTS } from './geometry.js';
 import { createPreview } from './preview.js';
-import { stlFromGeometries, zipStore, downloadBlob, slug } from './exporters.js';
+import { zipStore, downloadBlob, slug } from './exporters.js';
+import { stlFilesFromModel } from './mesh.js';
 
 const $ = (id) => document.getElementById(id);
 const MM_PER_IN = 25.4;
@@ -399,15 +400,9 @@ async function download() {
   el.downloadBtn.disabled = true;
   try {
     if (el.format.value === 'stl') {
-      // A body can be built from more than one slab (the base, when there's a QR code): merge them.
-      const groups = new Map();
-      for (const l of preview.layers()) groups.set(l.key, [...(groups.get(l.key) || []), l.geometry]);
-      const files = [...groups].map(([key, geometries], i) => ({
-        name: `${name}-${i + 1}-${key}.stl`,
-        data: stlFromGeometries(geometries),
-      }));
+      const files = stlFilesFromModel(model, name);
       downloadBlob(zipStore(files), `${name}-stl.zip`);
-      el.exportInfo.textContent = `STL zip saved: ${files.length} separate bodies (${[...groups.keys()].join(', ')}).`;
+      el.exportInfo.textContent = `STL zip saved: ${files.length} separate bodies (${files.map((f) => f.key).join(', ')}).`;
     } else {
       el.exportInfo.textContent = 'Building STEP… the CAD engine is a large one-time download (about 23 MB, cached afterwards).';
       const { buildStep } = await import('./step.js');

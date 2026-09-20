@@ -580,7 +580,7 @@ function initPrint() {
 
 let defaultState = null;
 let urlTimer = null;
-const NOSHARE = ['artMode', 'artLines', 'artShiftX', 'artShiftY', 'artThreshold', 'artDetail', 'artInvert', 'artDenoise', 'showThin', ...Object.values(PRINT_FIELDS)];
+const NOSHARE = ['artMode', 'artLines', 'artShiftX', 'artShiftY', 'artThreshold', 'artDetail', 'artInvert', 'artSharpen', 'artSmooth', 'artDenoise', 'showThin', ...Object.values(PRINT_FIELDS)];
 
 const csv = (list) => list.map((v) => +(Number(v) || 0).toFixed(2)).join(',');
 
@@ -730,6 +730,8 @@ async function retrace() {
       threshold: Number(el.artThreshold.value),
       detail: Number(el.artDetail.value),
       invert: el.artInvert.checked,
+      sharpen: el.artSharpen.checked,
+      smooth: el.artSmooth.checked,
       denoise: el.artDenoise.checked,
     });
     drawArtPreview(el.artPreview, art);
@@ -775,7 +777,7 @@ function initArt() {
     retrace();
   });
   for (const id of ['artThreshold', 'artDetail']) el[id].addEventListener('input', retraceSoon);
-  for (const id of ['artInvert', 'artDenoise']) el[id].addEventListener('input', retraceSoon);
+  for (const id of ['artInvert', 'artSharpen', 'artSmooth', 'artDenoise']) el[id].addEventListener('input', retraceSoon);
   for (const [range, box] of [['artThreshold', 'artThresholdNum'], ['artDetail', 'artDetailNum'], ['artShiftX', 'artShiftXNum'], ['artShiftY', 'artShiftYNum']]) {
     sliderBoxes.push(pairSliderAndBox(el[range], el[box], 0));
   }

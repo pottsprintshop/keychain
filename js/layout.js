@@ -19,6 +19,46 @@ export function fontDisplayName(font) {
   return pick(n.fullName) || pick(n.fontFamily) || 'Uploaded font';
 }
 
+// Letter-pair fixes for particular fonts (matched on the font's name). Potts Graffiti's T is as wide as its advance
+// (and t is the same glyph), so two in a row run together into one long crossbar. The second T of a pair drops by
+// `dy` and tucks left by `dx` (fractions of the font size; up and right are positive), which slides its crossbar
+// under the first one's and leaves a clear gap all round. The letters after it follow it left, so the word stays
+// tight. In a run of three, every other T moves.
+const PAIR_FIXES = [{ font: /potts\s*graffiti/i, letter: 'T', dx: -0.32, dy: -0.16 }];
+
+const pairFixesFor = (font) => PAIR_FIXES.filter((f) => f.font.test(fontDisplayName(font)));
+
+// How each glyph of a line is moved by the fixes (fractions of the font size), and how far the line's end moved.
+function glyphShifts(font, line, fixes) {
+  const ids = fixes.map((f) => font.charToGlyph(f.letter).index);
+  const runs = fixes.map(() => 0);
+  let carry = 0;
+  const shifts = font.stringToGlyphs(line).map((glyph) => {
+    let dx = carry, dy = 0;
+    fixes.forEach((f, i) => {
+      runs[i] = glyph.index === ids[i] ? runs[i] + 1 : 0;
+      if (runs[i] > 0 && runs[i] % 2 === 0) { // the 2nd, 4th... letter of a run
+        dx += f.dx;
+        dy += f.dy;
+        carry += f.dx;
+      }
+    });
+    return { dx, dy };
+  });
+  return { shifts, carry, any: shifts.some((s) => s.dx || s.dy) };
+}
+
+// The path for a line of text with those shifts applied glyph by glyph (positions and kerning are opentype's own).
+function pathWithShifts(font, line, x0, shifts, size) {
+  const commands = [];
+  let i = 0;
+  font.forEachGlyph(line, x0, 0, size, {}, (glyph, x, y, fontSize) => {
+    const s = shifts[i++];
+    commands.push(...glyph.getPath(x + s.dx * size, y - s.dy * size, fontSize, {}, font).commands); // (opentype paths are y-down)
+  });
+  return { commands };
+}
+
 // Advance width of the widest line, in nominal units (the unit the sideways offsets are relative to).
 export function widestLine(font, text) {
   const lines = String(text).replace(/\r/g, '').split('\n');
@@ -33,14 +73,16 @@ export function layoutText(font, text, { align = 'center', lineSpacing = 1, line
   const lineHeight = NOMINAL * lineSpacing;
   const contours = [];
   const widest = widestLine(font, text);
+  const fixes = pairFixesFor(font);
 
   lines.forEach((line, i) => {
     if (!line.trim()) return;
-    const width = font.getAdvanceWidth(line, NOMINAL);
+    const fixed = fixes.length ? glyphShifts(font, line, fixes) : null;
+    const width = font.getAdvanceWidth(line, NOMINAL) + (fixed ? fixed.carry * NOMINAL : 0); // (a tucked letter shortens the line)
     const shift = ((Number(lineShifts[i]) || 0) / 100) * widest;
     const x0 = (align === 'left' ? 0 : align === 'right' ? -width : -width / 2) + shift;
     const baseline = -i * lineHeight + ((Number(lineShiftsY[i]) || 0) / 100) * NOMINAL;
-    const path = font.getPath(line, x0, 0, NOMINAL);
+    const path = fixed && fixed.any ? pathWithShifts(font, line, x0, fixed.shifts, NOMINAL) : font.getPath(line, x0, 0, NOMINAL);
 
     // opentype paths are y-down with the baseline at y = 0; flip to y-up.
     const X = (x) => x;

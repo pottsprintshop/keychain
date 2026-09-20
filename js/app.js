@@ -8,6 +8,7 @@ import { estimate, analyze, PRINT_DEFAULTS } from './print.js';
 import { snapshot, diffState, toQuery, parseQuery, applyValues } from './state.js';
 import { parseBatch, runBatch } from './batch.js';
 import { dxfFromModel, svgFromModel } from './laser.js';
+import { getIcon } from './icons.js';
 
 const $ = (id) => document.getElementById(id);
 const MM_PER_IN = 25.4;
@@ -39,6 +40,7 @@ function num(input, fallback, min = 0) {
 
 function readParams() {
   const k = el.unit.value === 'in' ? MM_PER_IN : 1;
+  const icon = el.baseShape.value === 'sports' ? getIcon(el.sportIcon.value) : null;
   return {
     text: el.text.value,
     align: el.align.value,
@@ -55,6 +57,9 @@ function readParams() {
     baseMargin: num(el.baseMargin, DEFAULTS.baseMargin, 0),
     fillGaps: el.fillGaps.checked,
     baseShape: el.baseShape.value,
+    baseOn: el.baseOn.value === '1',
+    textOn: el.textOn.value === '1',
+    borderW: num(el.borderW, DEFAULTS.borderW, 0),
     plateRadius: num(el.plateRadius, DEFAULTS.plateRadius, 0),
     boneShaft: num(el.boneShaft, DEFAULTS.boneShaft * 100, 20) / 100,
     roundIn: num(el.roundIn, DEFAULTS.roundIn, 0),
@@ -80,11 +85,16 @@ function readParams() {
     qrText: el.qrText.value,
     qrEcc: el.qrEcc.value,
     qrPlate: el.qrPlate.checked,
-    art,
-    artMode: el.artMode.value,
-    artLines: num(el.artLines, DEFAULTS.artLines, 0.1),
-    artShiftX: num(el.artShiftX, 0, -1000),
-    artShiftY: num(el.artShiftY, 0, -1000),
+    // The Sports tag puts its icon beside the text (as tall as the text); otherwise it's the uploaded artwork.
+    ...(icon
+      ? { art: icon, artMode: 'right', artLines: 1, artShiftX: 0, artShiftY: 0 }
+      : {
+          art,
+          artMode: el.artMode.value,
+          artLines: num(el.artLines, DEFAULTS.artLines, 0.1),
+          artShiftX: num(el.artShiftX, 0, -1000),
+          artShiftY: num(el.artShiftY, 0, -1000),
+        }),
   };
 }
 
@@ -99,7 +109,7 @@ function syncBackColor() {
 }
 const colors = () => {
   syncBackColor();
-  return {
+  const c = {
     text: el.colorText.value,
     outline: el.colorOutline.value,
     outline2: el.colorOutline2.value,
@@ -107,6 +117,10 @@ const colors = () => {
     base: el.colorBase.value,
     back: el.colorBack.value,
   };
+  // The border is colored like the layer above the base: the outermost outline, or the text if there is none.
+  const n = Number(el.rings.value);
+  c.border = n > 0 ? c[n === 1 ? 'outline' : `outline${n}`] : c.text;
+  return c;
 };
 
 function fmtSize(w, h, unit) {
@@ -149,11 +163,68 @@ function syncLabels() {
   el.qrEccWrap.hidden = kind !== 'qr';
   el.backTextWrap.hidden = kind !== 'text';
   el.backArtNote.hidden = kind !== 'art';
-  for (const r of document.querySelectorAll('.ring-row')) r.hidden = Number(r.dataset.ring) > Number(el.rings.value);
+  syncLayers();
   // The corner radius is for the rectangle and hexagon; the shaft thickness for the dog bone.
-  el.plateRadiusWrap.hidden = !['plate', 'hex'].includes(el.baseShape.value);
+  el.plateRadiusWrap.hidden = !['plate', 'hex', 'sports'].includes(el.baseShape.value);
+  el.sportWrap.hidden = el.baseShape.value !== 'sports';
+  el.impactHint.hidden = !(el.baseShape.value === 'sports' && !currentFontIsImpact());
   el.boneShaftWrap.hidden = el.baseShape.value !== 'dogbone';
 }
+
+// ---- Layers: the plus and minus buttons -------------------------------------------
+
+// The outline rings' controls, nearest the text first: color, height, width.
+const RING_IDS = [['colorOutline', 'midH', 'outline'], ['colorOutline2', 'ring2H', 'ring2W'], ['colorOutline3', 'ring3H', 'ring3W']];
+const MAX_RINGS = 3;
+const ringCount = () => Number(el.rings.value);
+const layerOn = (name) => el[name === 'text' ? 'textOn' : 'baseOn'].value === '1';
+const layersActive = () => (layerOn('text') ? 1 : 0) + ringCount() + (layerOn('base') ? 1 : 0);
+
+// Show the layers that exist, dim the ones taken away (with a green plus to bring them back), and keep at least one.
+function syncLayers() {
+  const rings = ringCount();
+  for (const r of document.querySelectorAll('.ring-row')) r.hidden = Number(r.dataset.ring) > rings;
+  const last = layersActive() <= 1;
+  for (const name of ['text', 'base']) {
+    const on = layerOn(name);
+    for (const cell of document.querySelectorAll(`[data-row="${name}"]`)) {
+      cell.classList.toggle('off', !on);
+      if (cell.tagName === 'INPUT') cell.disabled = !on;
+    }
+    const b = document.querySelector(`.lg-btn[data-layer="${name}"]`);
+    b.classList.toggle('minus', on);
+    b.classList.toggle('plus', !on);
+    b.textContent = on ? '\u2212' : '+';
+    b.disabled = on && last;
+    const label = on ? `Remove the ${name} layer` : `Put the ${name} layer back`;
+    b.title = b.disabled ? 'A keychain needs at least one layer' : label;
+    b.setAttribute('aria-label', b.title);
+  }
+  for (const b of document.querySelectorAll('.lg-btn.minus[data-ring]')) b.disabled = last;
+  el.addRing.disabled = rings >= MAX_RINGS;
+  el.addRingNote.textContent = rings >= MAX_RINGS ? 'Three outline layers is the most.' : 'Add an outline layer around the text.';
+  // With no base there is no key hole, back or border to set up.
+  for (const section of document.querySelectorAll('.needs-base')) section.inert = !layerOn('base');
+  el.advancedLayers.inert = !layerOn('base');
+}
+
+function removeRing(k) {
+  const n = ringCount();
+  for (let i = k; i < n; i++) RING_IDS[i - 1].forEach((id, j) => (el[id].value = el[RING_IDS[i][j]].value)); // the rings outside it move in
+  el.rings.value = String(n - 1);
+}
+
+document.querySelector('#panelLayers').addEventListener('click', (e) => {
+  const b = e.target.closest('.lg-btn');
+  if (!b || b.disabled) return;
+  if (b.id === 'addRing') el.rings.value = String(Math.min(MAX_RINGS, ringCount() + 1));
+  else if (b.dataset.ring) removeRing(Number(b.dataset.ring));
+  else {
+    const flag = el[b.dataset.layer === 'text' ? 'textOn' : 'baseOn'];
+    flag.value = flag.value === '1' ? '0' : '1';
+  }
+  schedule();
+});
 
 // ---- Building ------------------------------------------------------------------
 
@@ -346,14 +417,78 @@ function enableLineDragging() {
 // Where the key hole naturally goes depends on the shape: a dog bone hangs from the middle of its top edge (the tab
 // nests between the knobs), everything else from the left. Switching shape moves the hole to the new shape's spot,
 // unless it was moved by hand.
-const HOLE_ANGLE_FOR = { dogbone: 90 };
-const holeAngleFor = (shape) => HOLE_ANGLE_FOR[shape] ?? DEFAULTS.holeAngle;
+// What each shape starts with, where that differs from the usual: the dog bone hangs from the middle of its top edge
+// and has a 0.8 mm rim; the Sports tag is a long thin rectangle (4 x 1 in) with a last name on it. Picking a shape
+// moves these to that shape's values, but only the ones still at the previous shape's (so nothing you set by hand is lost).
+const SHAPE_DEFAULTS = {
+  dogbone: { holeAngle: 90, borderW: 0.8 },
+  sports: { width: 101.6, height: 25.4, text: 'Deutsch' },
+};
+const SHAPE_KEYED = ['holeAngle', 'borderW']; // plain numeric controls
+const shapeDefault = (shape, key) => SHAPE_DEFAULTS[shape]?.[key] ?? DEFAULTS[key];
+const sizeFor = (shape) => [shapeDefault(shape, 'width'), shapeDefault(shape, 'height')]; // mm
+const unitMM = () => (el.unit.value === 'in' ? MM_PER_IN : 1);
+const sizeIs = (mm) => Math.abs(Number(el.width.value) * unitMM() - mm[0]) < 0.06 && Math.abs(Number(el.height.value) * unitMM() - mm[1]) < 0.06;
+const setSize = ([w, h]) => {
+  const digits = el.unit.value === 'in' ? 3 : 1;
+  el.width.value = +(w / unitMM()).toFixed(digits);
+  el.height.value = +(h / unitMM()).toFixed(digits);
+};
+
 let prevShape = el.baseShape.value;
 el.baseShape.addEventListener('change', () => {
-  if (Number(el.holeAngle.value) === holeAngleFor(prevShape)) el.holeAngle.value = holeAngleFor(el.baseShape.value);
-  prevShape = el.baseShape.value;
+  const shape = el.baseShape.value;
+  for (const key of SHAPE_KEYED) if (Number(el[key].value) === shapeDefault(prevShape, key)) el[key].value = shapeDefault(shape, key);
+  if (sizeIs(sizeFor(prevShape))) setSize(sizeFor(shape));
+  if (el.text.value === shapeDefault(prevShape, 'text')) {
+    el.text.value = shapeDefault(shape, 'text');
+    renderLineShifts();
+  }
+  prevShape = shape;
+  if (shape === 'sports') useImpact().then(() => schedule());
   schedule();
 });
+
+// ---- Impact, for the Sports tag ---------------------------------------------------------
+// Impact is licensed to the computer it came with, so it isn't shipped with this page. On desktop Chrome and Edge the
+// page can read it from the computer (the browser asks first); anywhere else, Upload font... does the same.
+
+const isImpact = (font) => /^impact\b/i.test(fontDisplayName(font));
+const currentFontIsImpact = () => {
+  const entry = fonts.get(el.font.value);
+  return !!entry && isImpact(entry.font);
+};
+
+async function useImpact() {
+  let hit = [...fonts].find(([, v]) => isImpact(v.font));
+  let why = 'The Sports tag is meant for Impact, which this page can only read from your computer.';
+  if (!hit && typeof window.queryLocalFonts === 'function') {
+    try {
+      const found = (await window.queryLocalFonts({ postscriptNames: ['Impact'] })).find((f) => /^impact/i.test(f.family) || /^impact/i.test(f.fullName));
+      if (found) {
+        const font = parseFont(await (await found.blob()).arrayBuffer());
+        const value = 'l:' + fonts.size;
+        addFontOption(value, 'Impact (this computer)', font);
+        hit = [value];
+      } else {
+        why = "This computer doesn't seem to have Impact, or the browser wouldn't share it. ";
+      }
+    } catch (err) {
+      console.info('Could not read installed fonts:', err);
+      why = "The browser wouldn't share your installed fonts. ";
+    }
+  } else if (!hit) {
+    why = "This browser can't look up installed fonts. ";
+  }
+  if (hit) {
+    el.font.value = hit[0];
+  } else {
+    el.impactText.textContent = why + 'Use Upload font\u2026 and pick Impact (on a Mac it is /System/Library/Fonts/Supplemental/Impact.ttf).';
+  }
+  syncLabels();
+  return !!hit;
+}
+el.useImpact.addEventListener('click', () => useImpact().then(() => schedule()));
 
 for (const b of el.holeQuick.children) {
   b.addEventListener('click', () => {
@@ -453,11 +588,11 @@ function designQuery() {
   const values = diffState(snapshot(document.querySelector('main')), defaultState);
   const entry = fonts.get(el.font.value);
   const first = fonts.get(el.font.options[0] && el.font.options[0].value);
-  if (entry && !el.font.value.startsWith('u:') && entry !== first) values.font = entry.name;
+  if (entry && !/^[ul]:/.test(el.font.value) && entry !== first) values.font = entry.name;
   if (lineShifts.some(Boolean)) values.lineShifts = csv(lineShifts);
   if (lineShiftsY.some(Boolean)) values.lineShiftsY = csv(lineShiftsY);
-  // A shape whose usual hole spot isn't the default (the dog bone's top edge) always spells the angle out, so its links keep it.
-  if (holeAngleFor(el.baseShape.value) !== DEFAULTS.holeAngle) values.holeAngle = el.holeAngle.value;
+  // A shape whose usual hole spot or border isn't the default (the dog bone's) always spells them out, so its links keep them.
+  for (const key of SHAPE_KEYED) if (shapeDefault(el.baseShape.value, key) !== DEFAULTS[key]) values[key] = el[key].value;
   return toQuery(values);
 }
 
@@ -474,8 +609,13 @@ function applyFromUrl() {
   if (!Object.keys(values).length) return;
   const { font, lineShifts: ls, lineShiftsY: lsy, ...controls } = values;
   applyValues(document.querySelector('main'), controls);
-  // A link that names a shape but not where the hole goes gets that shape's usual spot.
-  if (controls.baseShape && !('holeAngle' in controls)) el.holeAngle.value = String(holeAngleFor(el.baseShape.value));
+  // A link that names a shape but not where the hole goes (or its border) gets that shape's usual ones.
+  if (controls.baseShape) {
+    const shape = el.baseShape.value;
+    for (const key of SHAPE_KEYED) if (!(key in controls)) el[key].value = String(shapeDefault(shape, key));
+    if (!('width' in controls) && !('height' in controls)) setSize(sizeFor(shape));
+    if (!('text' in controls)) el.text.value = shapeDefault(shape, 'text');
+  }
   if (font) {
     const opt = [...el.font.options].find((o) => o.textContent === font);
     if (opt) el.font.value = opt.value;
@@ -485,7 +625,9 @@ function applyFromUrl() {
   lineShiftsY = list(lsy);
   prevUnit = el.unit.value;
   renderLineShifts();
-  el.nerdSize.open = el.fit.value !== 'contain' || el.sizeIncludesTab.checked; // show the folded settings if a link changed them
+  el.nerdSize.open = el.fit.value !== 'contain' || !el.sizeIncludesTab.checked; // show the folded settings if a link changed them
+  const angle = Math.round(Number(el.holeAngle.value));
+  el.nerdHole.open = Number(el.holePush.value) > 0 || ![0, 90, 180, 270].includes(angle);
 }
 
 async function copyLink() {
@@ -498,7 +640,7 @@ async function copyLink() {
   }
 }
 
-const usesUnsharable = () => el.font.value.startsWith('u:') || !!art;
+const usesUnsharable = () => /^[ul]:/.test(el.font.value) || !!art;
 
 // ---- Batch ---------------------------------------------------------------------------
 
@@ -747,7 +889,7 @@ function initForm() {
   el.width.value = +(DEFAULTS.width / k).toFixed(3);
   el.height.value = +(DEFAULTS.height / k).toFixed(3);
   el.width.step = el.height.step = '0.05';
-  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'backDepth', 'backMargin', 'plateRadius', 'ring2W', 'ring2H', 'ring3W', 'ring3H', 'artLines']) {
+  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'backDepth', 'backMargin', 'plateRadius', 'borderW', 'ring2W', 'ring2H', 'ring3W', 'ring3H', 'artLines']) {
     el[key].value = DEFAULTS[key];
   }
   el.boneShaft.value = DEFAULTS.boneShaft * 100;

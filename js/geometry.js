@@ -24,16 +24,19 @@ export const DEFAULTS = {
   height: 38.1, // 1.5"
   fit: 'contain', // 'contain' keeps the font's proportions, 'stretch' fills the box
   textSize: 1, // 0.05..1: the text as a fraction of the biggest size that fits (a smaller keychain if the base follows the text)
-  sizeIncludesTab: false, // false: width x height is the body; the key hole tab sticks out beyond it
+  sizeIncludesTab: true, // true: width x height counts the key hole tab; false: it is the body, and the tab sticks out beyond it
+  textOn: true, // the layers can each be taken away (a keychain needs at least one)
+  baseOn: true,
   textH: 0.6,
   midH: 0.6,
   baseH: 1.2,
   outline: 0.8, // outline layer extends this far past the text
   baseMargin: 2.0, // base layer extends this far past the outline
   fillGaps: true, // base is a solid silhouette (no see-through counters)
-  baseShape: 'text', // 'text' follows the letters; the rest fill the width x height: 'plate' (rounded rectangle), 'round' (ellipse), 'hex', 'dogbone'
+  baseShape: 'text', // 'text' follows the letters; the rest fill the width x height: 'plate' (rounded rectangle), 'sports' (a long thin one), 'round' (ellipse), 'hex', 'dogbone'
   plateRadius: 3, // corner radius of the rectangle and hexagon bases (mm)
   boneShaft: 0.5, // dog bone: how thick the shaft is, as a fraction of the height
+  borderW: 0, // a raised rim this wide (mm) around the edge of the base, in the color of the layer above the base; 0 = none
   roundIn: 1.0, // base: fillet radius on inside (concave) corners, incl. where the key hole tab joins
   roundOut: 0, // base: rounding radius on outside (convex) corners
   holeEnabled: true,
@@ -46,7 +49,7 @@ export const DEFAULTS = {
   lineShiftsY: [], // per-line vertical nudge, % of the font size
   fixed: null, // while dragging a line: the previous build's `layout`, so nothing re-fits or re-centres
   // Extra outline rings, each one further out from the text (ring 1 is `outline`/`midH` above).
-  rings: 1, // 1..3
+  rings: 1, // 0..3
   ring2W: 0.8,
   ring2H: 0.6,
   ring3W: 0.8,
@@ -61,7 +64,7 @@ export const DEFAULTS = {
   qrEcc: 'M', // error correction: L, M, Q or H
   qrPlate: false, // false: just the code's modules, in a color that contrasts with the base; true: modules on a plate
   art: null, // traced artwork ({ contours, aspect }), see art.js
-  artMode: 'off', // on the front: 'off' | 'above' the text | 'below' it | 'only' (instead of the text)
+  artMode: 'off', // on the front: 'off' | 'above' the text | 'below' it | 'right' or 'left' of it | 'only' (instead of the text)
   artLines: 2, // artwork height, in font sizes
   artShiftX: 0, // nudge, % of the font size
   artShiftY: 0,
@@ -70,9 +73,7 @@ export const DEFAULTS = {
 // ---- Base shapes -------------------------------------------------------------
 
 // Bases that fill the requested width x height (everything except 'text', which follows the letters).
-export const PLATE_SHAPES = ['plate', 'round', 'hex', 'dogbone'];
-// ...and the ones drawn from a shape rather than a rounded rectangle: the text is fitted inside them.
-const FITTED_SHAPES = ['round', 'hex', 'dogbone'];
+export const PLATE_SHAPES = ['plate', 'sports', 'round', 'hex', 'dogbone'];
 
 function ellipsePoints(a, b, tol = 0.004) {
   const R = Math.max(a, b);
@@ -82,7 +83,7 @@ function ellipsePoints(a, b, tol = 0.004) {
 }
 
 // The outline of a base shape with half-extents hw x hh, centred on the origin: a counter-clockwise polyline (mm).
-//   plate    rounded rectangle
+//   plate    rounded rectangle (the Sports tag is one too, just long and thin)
 //   round    ellipse (a circle when width = height)
 //   hex      hexagon with points left and right, flat top and bottom, corners rounded like the plate's
 //   dogbone  a shaft with two round knobs at each end
@@ -116,7 +117,7 @@ export function shapeRing(kind, hw, hh, p) {
 
 // The outline rings, nearest the text first: how far each extends from the text, and how tall it is.
 export function ringDefs(p) {
-  const n = Math.min(3, Math.max(1, Math.round(p.rings)));
+  const n = Math.min(3, Math.max(0, Number.isFinite(Number(p.rings)) ? Math.round(p.rings) : 1));
   const widths = [p.outline, p.ring2W, p.ring3W];
   const heights = [p.midH, p.ring2H, p.ring3H];
   let offset = 0;
@@ -129,7 +130,7 @@ export function ringDefs(p) {
 function holeMetrics(p) {
   const R = p.holeDia / 2;
   const Rt = R + p.holeEdge; // tab radius
-  const O = ringDefs(p).at(-1).offset; // how far the outermost ring reaches from the text
+  const O = ringDefs(p).at(-1)?.offset ?? 0; // how far the outermost ring reaches from the text
   const M = O + p.baseMargin;
   // The hole centre must be at least this far from the text so the hole clears the
   // outline layer, but no further than this or the tab stops overlapping the base.
@@ -239,6 +240,9 @@ export function pickLine(lines, x, y, pad = 1.5) {
 
 export function buildKeychain(font, params) {
   const p = { ...DEFAULTS, ...params };
+  // Without a base there is nothing to bore a key hole in, recess a back into, or put a border on.
+  const hasBase = p.baseOn !== false;
+  if (!hasBase) Object.assign(p, { holeEnabled: false, backKind: 'none', borderW: 0 });
   // The front: the text, and/or the artwork placed above, below or instead of it.
   let raw = p.art && p.artMode === 'only' ? [] : layoutText(font, p.text, p);
   if (p.art && p.artMode !== 'off') raw = raw.concat(placeArt(p.art, raw, p));
@@ -246,34 +250,29 @@ export function buildKeychain(font, params) {
 
   const warnings = [];
   const rings = ringDefs(p);
-  const M = rings.at(-1).offset + p.baseMargin;
+  const M = (rings.at(-1)?.offset ?? 0) + (hasBase ? p.baseMargin : 0); // how far the outside of the keychain is from the text
   const coarse = raw.map((c) => flattenContour(c, FIT_TOL));
   const ink = bboxOfPolylines(coarse);
   if (!(ink.w > 0) || !(ink.h > 0)) return null;
 
   const scaledCoarse = (sx, sy) =>
     coarse.map((pl) => pl.map(([x, y]) => [(x - ink.cx) * sx, (y - ink.cy) * sy]));
-  const plateMode = PLATE_SHAPES.includes(p.baseShape);
-  const shaped = FITTED_SHAPES.includes(p.baseShape); // round, hexagon, dog bone: the text is fitted inside the shape
-  let shapeBox = null; // half-extents of a shaped base (they don't depend on the text)
-  // Half-extents of the base body. A rectangle base fills the whole width x height you asked
-  // for ("expanded"); while fitting, and for the text-shaped base, it just hugs the text.
-  const halfBox = (sx, sy, expanded) => {
+  const plateMode = hasBase && PLATE_SHAPES.includes(p.baseShape); // the base is a shape drawn at the size asked for
+  const shaped = plateMode; // ...and the text is fitted inside it
+  let shapeBox = null; // half-extents of a plate (they don't depend on the text)
+  // Half-extents of the base body: a plate is drawn at the size you asked for; a base that follows the text
+  // (or no base at all) just hugs the text.
+  const halfBox = (sx, sy) => {
     if (p.fixed) return { hw: p.fixed.hw, hh: p.fixed.hh };
     if (shaped) return shapeBox;
-    let hw = (ink.w * sx) / 2 + M, hh = (ink.h * sy) / 2 + M;
-    if (expanded && plateMode && !p.sizeIncludesTab) {
-      hw = Math.max(hw, p.width / 2);
-      hh = Math.max(hh, p.height / 2);
-    }
-    return { hw, hh };
+    return { hw: (ink.w * sx) / 2 + M, hh: (ink.h * sy) / 2 + M };
   };
-  const bodyBox = (sx, sy, expanded = false) => {
-    const { hw, hh } = halfBox(sx, sy, expanded);
+  const bodyBox = (sx, sy) => {
+    const { hw, hh } = halfBox(sx, sy);
     return { x0: -hw, x1: hw, y0: -hh, y1: hh };
   };
-  const overall = (sx, sy, hole, expanded = false) => {
-    const b = bodyBox(sx, sy, expanded);
+  const overall = (sx, sy, hole) => {
+    const b = bodyBox(sx, sy);
     if (hole) {
       b.x0 = Math.min(b.x0, hole.cx - hole.Rt);
       b.x1 = Math.max(b.x1, hole.cx + hole.Rt);
@@ -283,21 +282,26 @@ export function buildKeychain(font, params) {
     return b;
   };
   // The box the requested width x height applies to.
-  const sizing = (sx, sy, hole, expanded = false) => (p.sizeIncludesTab ? overall(sx, sy, hole, expanded) : bodyBox(sx, sy, expanded));
-  // What the key hole slides along, for a rectangle base: the plate's edge.
-  const plateFor = (sx, sy, expanded) => {
+  const sizing = (sx, sy, hole) => (p.sizeIncludesTab ? overall(sx, sy, hole) : bodyBox(sx, sy));
+  // What the key hole slides along, for a plate: its edge. The text stays at least M inside the edge everywhere,
+  // which is all the hole needs to know.
+  const plateFor = (sx, sy) => {
     if (!plateMode) return null;
-    const { hw, hh } = halfBox(sx, sy, expanded);
-    // The text stays at least M inside the edge everywhere, which is all the hole needs to know for a fitted shape.
-    const margin = shaped ? M : Math.min(hw - (ink.w * sx) / 2, hh - (ink.h * sy) / 2);
-    return { ring: shapeRing(p.baseShape, hw, hh, p), margin };
+    const { hw, hh } = halfBox(sx, sy);
+    return { ring: shapeRing(p.baseShape, hw, hh, p), margin: M };
   };
   // The biggest text that fits inside a shaped base with the full margin M all the way round: the text's bounding
   // box must lie inside the shape pulled in by M. Stretched text fills a box with the shape's own proportions.
   const fitInShape = () => {
     const { hw, hh } = shapeBox;
-    const inner = allPaths(offsetTree([toPath(shapeRing(p.baseShape, hw, hh, p))], -(M + SIMPLIFY_EPS)));
     const stretch = p.fit === 'stretch';
+    if (p.baseShape === 'plate' || p.baseShape === 'sports') {
+      // A rectangle: the text box is the plate pulled in by M.
+      const iw = Math.max(0, 2 * (hw - M)), ih = Math.max(0, 2 * (hh - M));
+      const s = Math.min(iw / ink.w, ih / ink.h);
+      return stretch ? [iw / ink.w, ih / ink.h] : [s, s];
+    }
+    const inner = allPaths(offsetTree([toPath(shapeRing(p.baseShape, hw, hh, p))], -(M + SIMPLIFY_EPS)));
     const half = (s) => (stretch ? [s * hw, s * hh] : [(s * ink.w) / 2, (s * ink.h) / 2]);
     const fits = (s) => {
       const [a, b] = half(s);
@@ -317,8 +321,8 @@ export function buildKeychain(font, params) {
     return [sx, sy];
   };
 
-  // A shaped base is drawn first, at a size that doesn't depend on the text: the full width x height, or with the
-  // key hole tab counted, small enough that shape and tab together come to that size.
+  // A plate is drawn first, at a size that doesn't depend on the text: the full width x height, or with the
+  // key hole tab counted, small enough that plate and tab together come to that size.
   if (shaped && !p.fixed) {
     let hw = p.width / 2, hh = p.height / 2;
     for (let it = 0; p.sizeIncludesTab && p.holeEnabled && it < 12; it++) {
@@ -340,7 +344,7 @@ export function buildKeychain(font, params) {
     sx = Math.max(sx, MIN_SCALE);
     sy = Math.max(sy, MIN_SCALE);
     // The tab only matters for sizing when the size is meant to include it.
-    const hole = p.holeEnabled && p.sizeIncludesTab ? placeHole(scaledCoarse(sx, sy), p, plateFor(sx, sy, false)) : null;
+    const hole = p.holeEnabled && p.sizeIncludesTab ? placeHole(scaledCoarse(sx, sy), p, plateFor(sx, sy)) : null;
     const b = sizing(sx, sy, hole);
     const [nsx, nsy] = solve(b.x1 - b.x0 - ink.w * sx, b.y1 - b.y0 - ink.h * sy);
     const done = Math.abs(nsx - sx) < 1e-5 && Math.abs(nsy - sy) < 1e-5;
@@ -370,11 +374,11 @@ export function buildKeychain(font, params) {
     ? transformContours(raw, sx, sy, p.fixed.tx - p.fixed.shx, p.fixed.ty - p.fixed.shy)
     : transformContours(raw, sx, sy, -ink.cx * sx, -ink.cy * sy);
   let fine = centered.map((c) => flattenContour(c, FLATTEN_TOL));
-  let hole = p.holeEnabled ? placeHole(fine, p, plateFor(sx, sy, true), p.fixed ? [0, 0] : null) : null;
-  const ref = sizing(sx, sy, hole, true);
+  let hole = p.holeEnabled ? placeHole(fine, p, plateFor(sx, sy), p.fixed ? [0, 0] : null) : null;
+  const ref = sizing(sx, sy, hole);
   const shx = p.fixed ? p.fixed.shx : -(ref.x0 + ref.x1) / 2;
   const shy = p.fixed ? p.fixed.shy : -(ref.y0 + ref.y1) / 2;
-  const b = overall(sx, sy, hole, true);
+  const b = overall(sx, sy, hole);
 
   const contours = transformContours(centered, 1, 1, shx, shy);
   fine = fine.map((pl) => pl.map(([x, y]) => [x + shx, y + shy]));
@@ -406,52 +410,74 @@ export function buildKeychain(font, params) {
   const textPolys = treeToPolys(inkTree);
   // The outline rings stay pure offsets of the text; only the base gets fillets.
   const ringPolys = rings.map((r) => simplifyPolys(treeToPolys(offsetTree(inkPaths, r.offset))));
-  let basePaths;
-  if (plateMode) {
-    const { hw, hh } = halfBox(sx, sy, true);
-    basePaths = [toPath(shapeRing(p.baseShape, hw, hh, p).map(([x, y]) => [x + shx, y + shy]))];
-  } else {
-    const baseTree = offsetTree(inkPaths, M);
-    basePaths = p.fillGaps ? outerPaths(baseTree) : allPaths(baseTree);
-  }
-  const bodyBounds = pathsBBox(basePaths); // the base body without the key hole tab: what the QR code is centred on
-  // Join the key hole tab on before rounding, so the fillets blend it into the body.
-  if (hole) {
-    basePaths = allPaths(runClipper(CL.ClipType.ctUnion, basePaths, [toPath(circlePoints(hole.cx, hole.cy, hole.Rt))]));
-  }
-  basePaths = roundPaths(basePaths, p.roundIn, p.roundOut);
-  // A tab sitting in a notch can trap a little pocket; a solid base shouldn't keep it.
-  if (p.fillGaps || plateMode) basePaths = outerPaths(unionTree(basePaths));
-  // basePlain has the tab but no hole (the STEP export bores an exact hole);
-  // basePolys has the hole cut as a polygon, for the preview and STL.
-  const basePlain = simplifyPolys(treeToPolys(unionTree(basePaths)));
-  // Lines dragged far apart leave a base in separate pieces; say so, since it would print as separate parts.
-  if (!plateMode && basePlain.length > 1) {
-    warnings.push(`The base is in ${basePlain.length} separate pieces — move the text closer together so it prints as one keychain.`);
-  }
-  let basePolys = basePlain;
-  let basePunchedPaths = basePaths;
-  if (hole) {
-    const punched = runClipper(CL.ClipType.ctDifference, basePaths, [toPath(circlePoints(hole.cx, hole.cy, hole.R))]);
-    basePolys = simplifyPolys(treeToPolys(punched));
-    basePunchedPaths = allPaths(punched);
+  // The base (with the key hole tab and its fillets), unless it has been taken away.
+  let basePaths = [];
+  let bodyBounds = null; // the base body without the key hole tab: what the QR code is centred on
+  let basePlain = []; // has the tab but no hole (the STEP export bores an exact hole)
+  let basePolys = []; // has the hole cut as a polygon, for the preview and STL
+  let basePunchedPaths = [];
+  if (hasBase) {
+    if (plateMode) {
+      const { hw, hh } = halfBox(sx, sy);
+      basePaths = [toPath(shapeRing(p.baseShape, hw, hh, p).map(([x, y]) => [x + shx, y + shy]))];
+    } else {
+      const baseTree = offsetTree(inkPaths, M);
+      basePaths = p.fillGaps ? outerPaths(baseTree) : allPaths(baseTree);
+    }
+    bodyBounds = pathsBBox(basePaths);
+    // Join the key hole tab on before rounding, so the fillets blend it into the body.
+    if (hole) {
+      basePaths = allPaths(runClipper(CL.ClipType.ctUnion, basePaths, [toPath(circlePoints(hole.cx, hole.cy, hole.Rt))]));
+    }
+    basePaths = roundPaths(basePaths, p.roundIn, p.roundOut);
+    // A tab sitting in a notch can trap a little pocket; a solid base shouldn't keep it.
+    if (p.fillGaps || plateMode) basePaths = outerPaths(unionTree(basePaths));
+    basePlain = simplifyPolys(treeToPolys(unionTree(basePaths)));
+    // Lines dragged far apart leave a base in separate pieces; say so, since it would print as separate parts.
+    if (!plateMode && basePlain.length > 1) {
+      warnings.push(`The base is in ${basePlain.length} separate pieces — move the text closer together so it prints as one keychain.`);
+    }
+    basePolys = basePlain;
+    basePunchedPaths = basePaths;
+    if (hole) {
+      const punched = runClipper(CL.ClipType.ctDifference, basePaths, [toPath(circlePoints(hole.cx, hole.cy, hole.R))]);
+      basePolys = simplifyPolys(treeToPolys(punched));
+      basePunchedPaths = allPaths(punched);
+    }
   }
 
   const width = b.x1 - b.x0, height = b.y1 - b.y0;
   // Stack, bottom to top: the base, the outer rings down to ring 1, then the text.
-  const z1 = p.baseH;
+  const z1 = hasBase ? p.baseH : 0;
   let zTop = z1;
   const ringLayers = [];
   for (let i = rings.length - 1; i >= 0; i--) {
     ringLayers.push({ key: rings[i].key, name: rings[i].name, polys: ringPolys[i], z0: zTop, z1: zTop + rings[i].h });
     zTop += rings[i].h;
   }
-  const zText0 = zTop, z3 = zTop + p.textH;
+  const zText0 = zTop, z3 = zTop + (p.textOn === false ? 0 : p.textH);
+
+  // A raised rim around the edge of the base (tab included), as tall as the layer above the base. It is its own
+  // body, and the preview and exports color it like that layer.
+  let borderLayer = null;
+  if (hasBase && p.borderW > 0) {
+    const edge = outerPaths(unionTree(basePaths));
+    let band = runClipper(CL.ClipType.ctDifference, edge, allPaths(offsetTree(edge, -p.borderW)));
+    if (hole) band = runClipper(CL.ClipType.ctDifference, allPaths(band), [toPath(circlePoints(hole.cx, hole.cy, hole.R + 0.4))]); // never over the hole
+    const polys = simplifyPolys(treeToPolys(band));
+    if (polys.length) {
+      borderLayer = { key: 'border', name: 'Border', polys, z0: z1, z1: z1 + (rings.at(-1)?.h ?? p.textH) };
+      const above = rings.length ? ringPolys.at(-1) : p.textOn === false ? [] : textPolys;
+      if (above.length && allPaths(runClipper(CL.ClipType.ctIntersection, polysToPaths(polys), polysToPaths(above))).length) {
+        warnings.push('The border runs into the layer next to it. Make the base margin wider than the border, or the border thinner.');
+      }
+    }
+  }
 
   // Optional back content (QR code, text or artwork): a body recessed flush into the underside of the base.
   let back = null;
   let backLayer = null;
-  let baseLayers = [{ key: 'base', name: 'Base', polys: basePolys, z0: 0, z1 }];
+  let baseLayers = hasBase ? [{ key: 'base', name: 'Base', polys: basePolys, z0: 0, z1 }] : [];
   let baseLowerPlain = null;
   if (p.backKind !== 'none') {
     try {
@@ -500,7 +526,7 @@ export function buildKeychain(font, params) {
       textOverlap = allPaths(both).length > 0;
     }
   }
-  const half = halfBox(sx, sy, true);
+  const half = halfBox(sx, sy);
   const layout = p.fixed || { sx, sy, tx: -ink.cx * sx + shx, ty: -ink.cy * sy + shy, shx, shy, hw: half.hw, hh: half.hh, widest: widestLine(font, p.text) };
 
   return {
@@ -511,8 +537,9 @@ export function buildKeychain(font, params) {
     scale: { x: sx, y: sy },
     layers: [
       ...baseLayers,
+      ...(borderLayer ? [borderLayer] : []),
       ...ringLayers,
-      { key: 'text', name: 'Text', polys: textPolys, z0: zText0, z1: z3 },
+      ...(p.textOn === false ? [] : [{ key: 'text', name: 'Text', polys: textPolys, z0: zText0, z1: z3 }]),
       ...(backLayer ? [backLayer] : []),
     ],
     back,

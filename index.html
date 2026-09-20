@@ -35,6 +35,10 @@
         <input type="file" id="fontFile" accept=".ttf,.otf,.woff" hidden>
       </div>
       <p class="hint" id="fontNote"></p>
+      <p class="hint" id="impactHint" hidden>
+        <span id="impactText">The Sports tag is meant for Impact, which this page can only read from your computer.</span>
+        <button type="button" id="useImpact" class="secondary tiny">Use Impact</button>
+      </p>
       <div class="slider-row">
         <label for="lineSpacing">Line spacing</label>
         <span class="val"><input type="number" class="numval" id="lineSpacingNum" min="0.5" max="1.6" step="0.05" aria-label="Line spacing value"><span class="unit">&times;</span></span>
@@ -100,58 +104,67 @@
       <p class="hint">Artwork stays in your browser, so it can&rsquo;t be part of a shared link. Use it on the back too (Back &rarr; The artwork).</p>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="panelLayers">
       <h2>Layers</h2>
-      <div class="fields">
-        <label class="narrow">Outline rings
-          <select id="rings">
-            <option value="1" selected>1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-          </select>
-        </label>
-        <p class="hint fields-hint">Stacked bodies, so a slicer can give each one its own color.</p>
-      </div>
+      <input type="hidden" id="rings" value="1">
+      <input type="hidden" id="textOn" value="1">
+      <input type="hidden" id="baseOn" value="1">
       <div class="layer-grid">
         <span class="lg-head"></span>
         <span class="lg-head">Color</span>
         <span class="lg-head">Height (mm)</span>
         <span class="lg-head">Past layer above (mm)</span>
+        <span class="lg-head"></span>
 
-        <span class="lg-name">Text <em>top</em></span>
-        <input type="color" id="colorText" value="#f3cf1c" aria-label="Text color">
-        <input type="number" id="textH" min="0.1" step="0.1">
-        <span class="lg-none">&mdash;</span>
+        <span class="lg-name" data-row="text">Text <em>top</em></span>
+        <input type="color" id="colorText" value="#f3cf1c" aria-label="Text color" data-row="text">
+        <input type="number" id="textH" min="0.1" step="0.1" aria-label="Text height" data-row="text">
+        <span class="lg-none" data-row="text">&mdash;</span>
+        <button type="button" class="lg-btn" data-layer="text" data-row="text"></button>
 
-        <span class="lg-name">Outline <em>middle</em></span>
-        <input type="color" id="colorOutline" value="#d4206a" aria-label="Outline color">
-        <input type="number" id="midH" min="0.1" step="0.1">
-        <input type="number" id="outline" min="0" step="0.1" aria-label="Outline offset">
+        <span class="lg-name ring-row" data-ring="1">Outline <em>middle</em></span>
+        <input type="color" id="colorOutline" value="#d4206a" aria-label="Outline color" class="ring-row" data-ring="1">
+        <input type="number" id="midH" min="0.1" step="0.1" aria-label="Outline height" class="ring-row" data-ring="1">
+        <input type="number" id="outline" min="0" step="0.1" aria-label="Outline offset" class="ring-row" data-ring="1">
+        <button type="button" class="lg-btn minus ring-row" data-ring="1" title="Remove this outline layer" aria-label="Remove outline layer 1">&minus;</button>
 
         <span class="lg-name ring-row" data-ring="2" hidden>Outline 2 <em>outside 1</em></span>
         <input type="color" id="colorOutline2" value="#ffffff" aria-label="Outline 2 color" class="ring-row" data-ring="2" hidden>
-        <input type="number" id="ring2H" min="0.1" step="0.1" class="ring-row" data-ring="2" hidden>
+        <input type="number" id="ring2H" min="0.1" step="0.1" aria-label="Outline 2 height" class="ring-row" data-ring="2" hidden>
         <input type="number" id="ring2W" min="0" step="0.1" aria-label="Outline 2 width" class="ring-row" data-ring="2" hidden>
+        <button type="button" class="lg-btn minus ring-row" data-ring="2" title="Remove this outline layer" aria-label="Remove outline layer 2" hidden>&minus;</button>
 
         <span class="lg-name ring-row" data-ring="3" hidden>Outline 3 <em>outside 2</em></span>
         <input type="color" id="colorOutline3" value="#3fa7ff" aria-label="Outline 3 color" class="ring-row" data-ring="3" hidden>
-        <input type="number" id="ring3H" min="0.1" step="0.1" class="ring-row" data-ring="3" hidden>
+        <input type="number" id="ring3H" min="0.1" step="0.1" aria-label="Outline 3 height" class="ring-row" data-ring="3" hidden>
         <input type="number" id="ring3W" min="0" step="0.1" aria-label="Outline 3 width" class="ring-row" data-ring="3" hidden>
+        <button type="button" class="lg-btn minus ring-row" data-ring="3" title="Remove this outline layer" aria-label="Remove outline layer 3" hidden>&minus;</button>
 
-        <span class="lg-name">Base <em>bottom</em></span>
-        <input type="color" id="colorBase" value="#16161a" aria-label="Base color">
-        <input type="number" id="baseH" min="0.1" step="0.1">
-        <input type="number" id="baseMargin" min="0" step="0.1" aria-label="Base margin">
+        <span class="lg-name" data-row="base">Base <em>bottom</em></span>
+        <input type="color" id="colorBase" value="#16161a" aria-label="Base color" data-row="base">
+        <input type="number" id="baseH" min="0.1" step="0.1" aria-label="Base height" data-row="base">
+        <input type="number" id="baseMargin" min="0" step="0.1" aria-label="Base margin" data-row="base">
+        <button type="button" class="lg-btn" data-layer="base" data-row="base"></button>
       </div>
-      <div class="fields">
-        <label>Blend inside corners (mm) <input type="number" id="roundIn" min="0" step="0.1"></label>
-        <label>Round outside corners (mm) <input type="number" id="roundOut" min="0" step="0.1"></label>
-        <label class="check" title="Fill the gaps between letters, so the base is one solid silhouette"><input type="checkbox" id="fillGaps" checked> Solid base</label>
+      <div class="layer-add">
+        <button type="button" class="lg-btn plus" id="addRing" title="Add an outline layer" aria-label="Add an outline layer">+</button>
+        <span class="hint" id="addRingNote">Add an outline layer around the text.</span>
       </div>
-      <p class="hint">Fillets on the base, including where the key hole tab joins the body. The outline and text keep their exact shapes.</p>
+      <p class="hint">Stacked bodies, so a slicer can give each one its own color.</p>
+      <details class="nerd-menu" id="advancedLayers">
+        <summary>Advanced</summary>
+        <div class="fields">
+          <label>Blend inside corners (mm) <input type="number" id="roundIn" min="0" step="0.1"></label>
+          <label>Round outside corners (mm) <input type="number" id="roundOut" min="0" step="0.1"></label>
+        </div>
+        <div class="control-row checkbox-row">
+          <label><input type="checkbox" id="fillGaps" checked> Solid base (fill the gaps between letters)</label>
+        </div>
+        <p class="hint">Fillets on the base, including where the key hole tab joins the body. The outline and text keep their exact shapes.</p>
+      </details>
     </section>
 
-    <section class="panel">
+    <section class="panel needs-base" id="panelHole">
       <div class="panel-head">
         <h2>Key hole</h2>
         <label class="check-inline"><input type="checkbox" id="holeEnabled" checked> Add a key hole</label>
@@ -171,30 +184,33 @@
             <button type="button" class="scale-btn" data-angle="270">Bottom</button>
           </div>
         </div>
-        <div class="control-row">
-          <label>Height <span class="dim">from the top</span></label>
-          <div class="scale-buttons" id="holeHeights">
-            <button type="button" class="scale-btn" data-h="20">20%</button>
-            <button type="button" class="scale-btn" data-h="50">50%</button>
-            <button type="button" class="scale-btn" data-h="80">80%</button>
+        <details class="nerd-menu" id="nerdHole">
+          <summary>Nerd Shite</summary>
+          <div class="control-row">
+            <label>Height <span class="dim">from the top</span></label>
+            <div class="scale-buttons" id="holeHeights">
+              <button type="button" class="scale-btn" data-h="20">20%</button>
+              <button type="button" class="scale-btn" data-h="50">50%</button>
+              <button type="button" class="scale-btn" data-h="80">80%</button>
+            </div>
           </div>
-        </div>
-        <div class="slider-pair">
-          <div class="slider-row">
-            <label for="holeAngle">Around the edge</label>
-            <span class="val"><input type="number" class="numval" id="holeAngleNum" min="0" max="360" step="1" aria-label="Angle around the edge in degrees"><span class="unit" id="holeAngleUnit"></span></span>
-            <input type="range" id="holeAngle" min="0" max="360" step="any" value="180">
+          <div class="slider-pair">
+            <div class="slider-row">
+              <label for="holeAngle">Around the edge</label>
+              <span class="val"><input type="number" class="numval" id="holeAngleNum" min="0" max="360" step="1" aria-label="Angle around the edge in degrees"><span class="unit" id="holeAngleUnit"></span></span>
+              <input type="range" id="holeAngle" min="0" max="360" step="any" value="180">
+            </div>
+            <div class="slider-row">
+              <label for="holePush">Sticks out</label>
+              <span class="val"><input type="number" class="numval" id="holePushNum" min="0" max="100" step="1" aria-label="How far it sticks out, percent"><span class="unit">%</span></span>
+              <input type="range" id="holePush" min="0" max="100" step="any" value="0">
+            </div>
           </div>
-          <div class="slider-row">
-            <label for="holePush">Sticks out</label>
-            <span class="val"><input type="number" class="numval" id="holePushNum" min="0" max="100" step="1" aria-label="How far it sticks out, percent"><span class="unit">%</span></span>
-            <input type="range" id="holePush" min="0" max="100" step="any" value="0">
-          </div>
-        </div>
+        </details>
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel needs-base" id="panelBack">
       <h2>Back</h2>
       <div class="fields">
         <label class="grow">Put on the back
@@ -287,7 +303,7 @@
   </div>
 
   <div class="preview-col">
-    <section class="panel slim" id="panelShape">
+    <section class="panel slim needs-base" id="panelShape">
       <div class="fields">
         <label class="grow">Base shape
           <select id="baseShape">
@@ -296,10 +312,21 @@
             <option value="round">Round / oval</option>
             <option value="hex">Hexagon</option>
             <option value="dogbone">Dog bone</option>
+            <option value="sports">Sports tag</option>
+          </select>
+        </label>
+        <label id="sportWrap" hidden>Sport
+          <select id="sportIcon">
+            <option value="tennis" selected>Tennis racquet</option>
+            <option value="baseball">Baseball</option>
+            <option value="football">Football</option>
+            <option value="soccer">Soccer ball</option>
+            <option value="none">No icon</option>
           </select>
         </label>
         <label id="plateRadiusWrap" hidden>Corner radius (mm) <input type="number" id="plateRadius" min="0" step="0.5"></label>
         <label id="boneShaftWrap" hidden>Shaft thickness (%) <input type="number" id="boneShaft" min="20" max="95" step="5"></label>
+        <label id="borderWrap" title="A raised rim around the edge, in the color of the layer above the base">Border (mm) <input type="number" id="borderW" min="0" step="0.1"></label>
       </div>
     </section>
 
@@ -344,7 +371,7 @@
           </select>
         </div>
         <div class="control-row checkbox-row">
-          <label><input type="checkbox" id="sizeIncludesTab"> Count the key hole tab in the size</label>
+          <label><input type="checkbox" id="sizeIncludesTab" checked> Count the key hole tab in the size</label>
         </div>
       </details>
     </section>

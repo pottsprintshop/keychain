@@ -1,16 +1,17 @@
 // Self-test: builds keychains and checks them. Open tests/index.html (served over http) and press Run all.
 // Results are also left on window.__testResults for scripts.
 
-import { parseFont } from '../js/layout.js';
+import { parseFont, layoutText, flattenContour, bboxOfPolylines } from '../js/layout.js';
 import { buildKeychain } from '../js/geometry.js';
 import { stlFilesFromModel } from '../js/mesh.js';
 import { estimate, analyze, PRINT_DEFAULTS } from '../js/print.js';
 import { dxfFromModel, svgFromModel } from '../js/laser.js';
 import { parseBatch, runBatch } from '../js/batch.js';
 import { snapshot, diffState, toQuery, parseQuery, applyValues } from '../js/state.js';
-import { loadArtSource, traceArt } from '../js/art.js';
+import { loadArtSource, traceArt, placeArt } from '../js/art.js';
+import { ICONS, getIcon } from '../js/icons.js';
 import { fitArcs, sampleFitted } from '../js/arcs.js';
-import { circlePoints, plateRing } from '../js/clip.js';
+import { circlePoints, plateRing, CL, toPath, allPaths, unionTree, offsetTree, runClipper, treeToPolys } from '../js/clip.js';
 
 // ---- helpers ----------------------------------------------------------------------------
 
@@ -136,22 +137,28 @@ test('the bundled fonts load', async () => {
   return `${fonts.size} fonts`;
 });
 
-test('the default size is 2.5 x 1.5 in, and stretch fills it exactly', () => {
+test('the size is 2.5 x 1.5 in; without the tab counted it is the body, and stretch fills it exactly', () => {
   for (const [name, f] of fonts) {
-    const m = build(f);
+    const m = build(f, { sizeIncludesTab: false });
     const w = m.layout.hw * 2, h = m.layout.hh * 2;
     assert(w <= 63.51 && h <= 38.11, `${name}: body ${w.toFixed(2)} x ${h.toFixed(2)} exceeds 63.5 x 38.1`);
     assert(Math.abs(w - 63.5) < 0.05 || Math.abs(h - 38.1) < 0.05, `${name}: neither dimension reaches the target`);
-    const s = build(f, { fit: 'stretch' });
+    const s = build(f, { fit: 'stretch', sizeIncludesTab: false });
     near(s.layout.hw * 2, 63.5, 0.05, `${name} stretch width`);
     near(s.layout.hh * 2, 38.1, 0.05, `${name} stretch height`);
   }
 });
 
-test('the size can include the key hole tab', () => {
-  const m = build(font(/Carter/), { sizeIncludesTab: true });
-  assert(m.size.w <= 63.51 && m.size.h <= 38.11, `overall ${m.size.w.toFixed(2)} x ${m.size.h.toFixed(2)}`);
-  assert(Math.abs(m.size.w - 63.5) < 0.1 || Math.abs(m.size.h - 38.1) < 0.1, 'neither overall dimension reaches the target');
+test('the key hole tab is counted in the size by default, for every base shape', () => {
+  const f = font(/Carter/);
+  for (const shape of ['text', 'plate', 'round', 'hex', 'dogbone']) {
+    const m = build(f, { baseShape: shape });
+    assert(m.size.w <= 63.55 && m.size.h <= 38.15, `${shape}: overall ${m.size.w.toFixed(2)} x ${m.size.h.toFixed(2)} is over 63.5 x 38.1`);
+    assert(Math.abs(m.size.w - 63.5) < 0.1 || Math.abs(m.size.h - 38.1) < 0.1, `${shape}: neither overall dimension reaches the target`);
+    if (shape !== 'text') assert(Math.abs(m.size.w - 63.5) < 0.1 && Math.abs(m.size.h - 38.1) < 0.1, `${shape}: a plate fills the size (${m.size.w.toFixed(2)} x ${m.size.h.toFixed(2)})`);
+  }
+  const body = build(f, { sizeIncludesTab: false });
+  assert(body.size.w > 63.6, 'with the tab left out of the size, the tab sticks out past it');
 });
 
 test('outline rings stack contiguously under the text', () => {
@@ -304,6 +311,189 @@ test('dog bone: the key hole in the middle of the top edge clears the text and n
     assert(base.length === 1 && base[0].holes.length === 1, `shaft ${shaft}: one piece with one hole`);
     if (shaft <= 0.5) near(m.size.h, 38.1, 0.05, `shaft ${shaft}: the tab sits between the knobs, so the height is unchanged`);
   }
+});
+
+test('layers can be taken away: no outlines, no text, no base', () => {
+  const f = font(/Carter/);
+  const keys = (m) => [...new Set(m.layers.map((l) => l.key))].join();
+  const none = build(f, { rings: 0 });
+  assert(keys(none) === 'base,text', `no outline: ${keys(none)}`);
+  near(none.layers.find((l) => l.key === 'text').z0, none.layers.find((l) => l.key === 'base').z1, 1e-9, 'the text sits right on the base');
+  const noText = build(f, { textOn: false });
+  assert(keys(noText) === 'base,outline', `no text: ${keys(noText)}`);
+  near(noText.size.d, 1.2 + 0.6, 1e-9, 'total thickness without the text');
+  const noBase = build(f, { baseOn: false, holeEnabled: true, backKind: 'qr', qrText: 'https://x.co', borderW: 0.8 });
+  assert(keys(noBase) === 'outline,text', `no base: ${keys(noBase)}`);
+  assert(!noBase.exact.hole && noBase.layers.every((l) => l.z0 >= 0) && noBase.layers[0].z0 === 0, 'the key hole, back and border need a base, so they drop away with it');
+  near(noBase.size.w, 63.5, 0.1, 'no base: the size is still the size asked for');
+  const lone = build(f, { rings: 0, textOn: false });
+  assert(keys(lone) === 'base', `only a base: ${keys(lone)}`);
+  const onlyText = build(f, { rings: 0, baseOn: false });
+  assert(keys(onlyText) === 'text', `only text: ${keys(onlyText)}`);
+  // every combination still makes watertight STLs with the right volume
+  let n = 0;
+  for (const rings of [0, 1, 3]) for (const textOn of [true, false]) for (const baseOn of [true, false]) {
+    if (!rings && !textOn && !baseOn) continue;
+    for (const baseShape of ['text', 'plate', 'dogbone']) {
+      const m = build(f, { rings, textOn, baseOn, baseShape, borderW: baseShape === 'dogbone' ? 0.8 : 0 });
+      for (const file of stlFilesFromModel(m, 't')) {
+        const st = stlStats(file.data), exp = volumeOf(m, file.key);
+        assert(st.open === 0, `rings ${rings} text ${textOn} base ${baseOn} ${baseShape} ${file.key}: ${st.open} open edges`);
+        near(st.vol / exp, 1, 0.001, `rings ${rings} text ${textOn} base ${baseOn} ${baseShape} ${file.key} volume`);
+      }
+      n++;
+    }
+  }
+  return `${n} combinations`;
+});
+
+test('a border is a raised rim along the edge of the base, as tall as the layer above the base', () => {
+  const f = font(/Carter/);
+  for (const shape of ['plate', 'round', 'hex', 'dogbone', 'text']) {
+    const m = build(f, { baseShape: shape, borderW: 0.8, rings: 2, ring2H: 0.4 });
+    const border = m.layers.find((l) => l.key === 'border');
+    const base = m.layers.find((l) => l.key === 'base');
+    assert(border, `${shape}: has a border`);
+    near(border.z0, base.z1, 1e-9, `${shape}: the border sits on the base`);
+    near(border.z1 - border.z0, 0.4, 1e-9, `${shape}: as tall as the outermost outline (0.4)`);
+    // every point of the border is within 0.8 mm of the outer edge of the base, and none is outside it
+    const edge = base.polys.map((p) => p.outer);
+    for (const p of border.polys) for (const [x, y] of p.outer) {
+      assert(distToRings(x, y, edge) < 0.05 || distToRings(x, y, base.polys.flatMap((q) => q.holes)) < 0.9, `${shape}: border point off the edge`);
+    }
+    assert(m.warnings.length === 0, `${shape}: ${m.warnings.join(' | ')}`);
+    // its area is about the perimeter times its width
+    let perimeter = 0;
+    for (const p of base.polys) for (const ring of [p.outer]) for (let i = 0; i < ring.length; i++) { const [x1, y1] = ring[i], [x2, y2] = ring[(i + 1) % ring.length]; perimeter += Math.hypot(x2 - x1, y2 - y1); }
+    const area = netArea(border.polys);
+    assert(area > perimeter * 0.8 * 0.7 && area < perimeter * 0.8 * 1.15, `${shape}: border area ${area.toFixed(1)} vs perimeter ${perimeter.toFixed(1)} x 0.8`);
+  }
+  const plain = build(f, { baseShape: 'dogbone', borderW: 0.8 });
+  const rim = plain.layers.find((l) => l.key === 'border');
+  const h = plain.exact.hole;
+  for (const p of rim.polys) for (const ring of [p.outer, ...p.holes]) for (const [x, y] of ring) assert(Math.hypot(x - h.cx, y - h.cy) >= h.R + 0.3, 'the border stays clear of the key hole');
+  assert(!build(f, { borderW: 0 }).layers.some((l) => l.key === 'border'), 'no border by default');
+  const wide = build(f, { baseMargin: 0.5, borderW: 1.5 });
+  assert(wide.warnings.some((w) => /border/.test(w)), 'a border that runs into the outline is flagged');
+});
+
+test('Potts Graffiti: the second T of a pair drops and tucks left instead of merging with the first', () => {
+  const f = font(/Graffiti/);
+  const one = layoutText(f, 'T', { align: 'left' }).length; // contours per T
+  const groups = (text) => {
+    const cs = layoutText(f, text, { align: 'left' });
+    assert(cs.length % one === 0, `${text}: ${cs.length} contours`);
+    return Array.from({ length: cs.length / one }, (_, g) => cs.slice(g * one, (g + 1) * one).map((c) => flattenContour(c, 0.05)));
+  };
+  const paths = (polylines) => allPaths(unionTree(polylines.map(toPath)));
+  const gap = (a, b) => { // how close two shapes come, by growing one until it meets the other
+    let lo = 0, hi = 30;
+    for (let i = 0; i < 9; i++) {
+      const g = (lo + hi) / 2;
+      const hit = allPaths(runClipper(CL.ClipType.ctIntersection, allPaths(offsetTree(paths(a), g)), paths(b))).length > 0;
+      if (hit) hi = g; else lo = g;
+    }
+    return lo;
+  };
+  for (const text of ['TT', 'tt']) {
+    const [a, b] = groups(text);
+    assert(gap(a, b) >= 4, `${text}: the two T's come within ${gap(a, b).toFixed(1)} units of each other`);
+    const A = bboxOfPolylines(a), B = bboxOfPolylines(b);
+    near(A.y1 - B.y1, 16, 0.5, `${text}: the second T drops 0.16 of the font size`);
+    assert(B.x0 < A.x1 - 20, `${text}: and tucks under the first one's crossbar`);
+  }
+  const [t1, t2, t3] = groups('TTT');
+  near(bboxOfPolylines(t3).y1, bboxOfPolylines(t1).y1, 0.5, 'in a run of three, the third T is back up');
+  assert(bboxOfPolylines(t2).y1 < bboxOfPolylines(t1).y1 - 10, 'and the second one is down');
+  // the letters after the tucked T follow it, and everything else in the font is untouched
+  const plain = layoutText(f, 'PO', { align: 'left' });
+  assert(JSON.stringify(plain) === JSON.stringify(layoutText(f, 'PO', { align: 'left' })), 'PO is laid out as before');
+  const before = bboxOfPolylines(layoutText(f, 'TS', { align: 'left' }).map((c) => flattenContour(c, 0.05)));
+  const after = bboxOfPolylines(layoutText(f, 'TTS', { align: 'left' }).map((c) => flattenContour(c, 0.05)));
+  near(after.x1 - before.x1, f.getAdvanceWidth('TTS', 100) - f.getAdvanceWidth('TS', 100) - 32, 1.5, 'the S follows the tucked T (one T wider, less the 32 units it moved left)');
+  const carter = font(/Carter/);
+  const c = layoutText(carter, 'TT', { align: 'left' });
+  near(bboxOfPolylines(c.map((k) => flattenContour(k, 0.05))).y0, bboxOfPolylines(layoutText(carter, 'T', { align: 'left' }).map((k) => flattenContour(k, 0.05))).y0, 1e-6, 'other fonts are left alone');
+});
+
+test('the sports icons are clean artwork: in the unit box, no fragments, nothing thinner than half a millimetre at 16 mm tall', () => {
+  const mm = 16;
+  for (const key of Object.keys(ICONS)) {
+    const art = getIcon(key);
+    assert(art && art.contours.length >= 2 && art.aspect > 0.7 && art.aspect < 1.4, `${key}: ${art && art.contours.length} contours, aspect ${art && art.aspect}`);
+    for (const c of art.contours) {
+      for (const [x, y] of [c.start, ...c.segs.map((sg) => [sg[1], sg[2]])]) assert(y >= -1e-6 && y <= 1 + 1e-6 && Math.abs(x) <= art.aspect / 2 + 1e-6, `${key}: a point is outside the box`);
+    }
+    const paths = art.contours.map((c) => toPath([c.start, ...c.segs.map((sg) => [sg[1], sg[2]])].map(([x, y]) => [x * mm, y * mm])));
+    const solid = allPaths(unionTree(paths, CL.PolyFillType.pftEvenOdd));
+    const area = (ps) => netArea(treeToPolys(unionTree(ps)));
+    const A = area(solid);
+    assert(A > 0.15 * mm * mm, `${key}: the icon is nearly empty (${A.toFixed(1)} mm2)`);
+    const opened = allPaths(offsetTree(allPaths(offsetTree(solid, -0.25)), 0.25));
+    const closed = allPaths(offsetTree(allPaths(offsetTree(solid, 0.25)), -0.25));
+    assert((A - area(opened)) / A < 0.03, `${key}: ${(((A - area(opened)) / A) * 100).toFixed(1)}% of it is thinner than 0.5 mm`);
+    assert((area(closed) - A) / A < 0.03, `${key}: ${(((area(closed) - A) / A) * 100).toFixed(1)}% of it is gaps narrower than 0.5 mm`);
+    // no two outlines touch at a point (that makes an invalid, pinched solid)
+    const seen = new Map();
+    art.contours.forEach((c, i) => {
+      for (const [x, y] of [c.start, ...c.segs.map((sg) => [sg[1], sg[2]])]) {
+        const k = `${Math.round(x * 1e5)},${Math.round(y * 1e5)}`;
+        assert(!seen.has(k) || seen.get(k) === i, `${key}: two outlines touch at a point`);
+        seen.set(k, i);
+      }
+    });
+    // one solid piece, apart from the islands inside its cut-outs
+    assert(treeToPolys(unionTree(solid)).length === 1, `${key}: the icon is in ${treeToPolys(unionTree(solid)).length} pieces`);
+  }
+});
+
+test('artwork can sit beside the text, as tall as the text', () => {
+  const f = font(/Carter/);
+  const text = layoutText(f, 'Deutsch', { align: 'left' });
+  const tb = bboxOfPolylines(text.map((c) => flattenContour(c, 0.05)));
+  const art = getIcon('soccer');
+  for (const mode of ['right', 'left']) {
+    const placed = placeArt(art, text, { artMode: mode, artLines: 1, artShiftX: 0, artShiftY: 0 });
+    const ab = bboxOfPolylines(placed.map((c) => flattenContour(c, 0.05)));
+    near(ab.h, tb.h, 0.5, `${mode}: as tall as the text`);
+    near(ab.cy, tb.cy, 0.5, `${mode}: centred on the text vertically`);
+    assert(mode === 'right' ? ab.x0 > tb.x1 : ab.x1 < tb.x0, `${mode}: on the ${mode}, clear of the text`);
+    assert(placed.every((c) => c.line === -1), 'tagged as artwork');
+  }
+  const half = placeArt(art, text, { artMode: 'right', artLines: 0.5, artShiftX: 0, artShiftY: 0 });
+  near(bboxOfPolylines(half.map((c) => flattenContour(c, 0.05))).h, tb.h / 2, 0.5, 'artLines scales the icon');
+});
+
+test('the Sports tag: a long thin rectangle, a last name and an icon, all inside the base', () => {
+  const f = font(/Carter/);
+  const margin = 0.8 + 2.0;
+  for (const key of ['tennis', 'baseball', 'football', 'soccer']) {
+    const m = build(f, { baseShape: 'sports', text: 'Deutsch', width: 101.6, height: 25.4, art: getIcon(key), artMode: 'right', artLines: 1 });
+    near(m.size.w, 101.6, 0.1, `${key}: 4 in long, key hole tab included`);
+    near(m.size.h, 25.4, 0.1, `${key}: 1 in high`);
+    const base = m.layers.find((l) => l.key === 'base').polys;
+    const text = m.layers.find((l) => l.key === 'text').polys;
+    let worst = Infinity;
+    for (const p of text) for (const [x, y] of p.outer) {
+      assert(insidePolys(x, y, base), `${key}: the text or icon sticks out of the base`);
+      worst = Math.min(worst, distToRings(x, y, ringsOf(base)));
+    }
+    assert(worst >= margin - 0.05, `${key}: only ${worst.toFixed(2)} mm from the edge (margin ${margin})`);
+    // the icon is the piece at the right, about as tall as the letters
+    const b = bboxOf(text);
+    const right = text.filter((p) => p.outer.every(([x]) => x > b.x1 - (b.y1 - b.y0) * 1.6));
+    assert(right.length >= 1, `${key}: nothing at the right end`);
+    assert(m.warnings.length === 0, `${key}: ${m.warnings.join(' | ')}`);
+    for (const file of stlFilesFromModel(m, 't')) {
+      const st = stlStats(file.data), exp = volumeOf(m, file.key);
+      assert(st.open === 0, `${key} ${file.key}: ${st.open} open edges`);
+      near(st.vol / exp, 1, 0.001, `${key} ${file.key} volume`);
+    }
+  }
+  // without an icon it is just the name, and the hole sits at the left end
+  const plain = build(f, { baseShape: 'sports', text: 'Deutsch', width: 101.6, height: 25.4 });
+  assert(plain.exact.hole.cx < -40, 'the key hole is at the left end');
+  assert(plain.scale.x > 0.05, 'the name is a reasonable size');
 });
 
 test('line offsets move a line relative to the others; a frozen layout rebuilds identically', () => {
@@ -531,6 +721,7 @@ test('STEP: default plate with a QR code', () => stepCheck(build(font(/Carter/),
 test('STEP: text-shaped base, 3 rings, back text', () => stepCheck(build(font(/Graffiti/), { text: 'WHOOP\nWHOOP!!', rings: 3, backKind: 'text', backText: 'If found call\n303-555-0100' }), 'graffiti', { maxMB: 12 }), { step: true });
 test('STEP: dog bone base', () => stepCheck(build(font(/Carter/), { baseShape: 'dogbone', text: 'Rex', width: 70 }), 'dogbone', { maxMB: 4, exactText: true }), { step: true });
 test('STEP: hexagon base with a QR code', () => stepCheck(build(font(/Carter/), { baseShape: 'hex', width: 60, height: 52, backKind: 'qr', qrText: 'https://x.co/a' }), 'hex+QR', { maxMB: 6 }), { step: true });
+test('STEP: sports tag with an icon', () => stepCheck(build(font(/Carter/), { baseShape: 'sports', text: 'Deutsch', width: 101.6, height: 25.4, art: getIcon('tennis'), artMode: 'right', artLines: 1 }), 'sports', { maxMB: 5, exactText: true }), { step: true });
 test('STEP: lines dragged together (overlapping glyphs) keep exact text', () => stepCheck(build(font(/Carter/), { lineShiftsY: [0, 35] }), 'overlap', { maxMB: 4, exactText: true }), { step: true });
 
 // ---- runner ----------------------------------------------------------------------------------------

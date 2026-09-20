@@ -33,7 +33,7 @@ export const DEFAULTS = {
   outline: 0.8, // outline layer extends this far past the text
   baseMargin: 2.0, // base layer extends this far past the outline
   fillGaps: true, // base is a solid silhouette (no see-through counters)
-  baseShape: 'text', // 'text' follows the letters; the rest fill the width x height: 'plate' (rounded rectangle), 'round' (ellipse), 'hex', 'dogbone'
+  baseShape: 'text', // 'text' follows the letters; the rest fill the width x height: 'plate' (rounded rectangle), 'sports' (a long thin one), 'round' (ellipse), 'hex', 'dogbone'
   plateRadius: 3, // corner radius of the rectangle and hexagon bases (mm)
   boneShaft: 0.5, // dog bone: how thick the shaft is, as a fraction of the height
   borderW: 0, // a raised rim this wide (mm) around the edge of the base, in the color of the layer above the base; 0 = none
@@ -64,7 +64,7 @@ export const DEFAULTS = {
   qrEcc: 'M', // error correction: L, M, Q or H
   qrPlate: false, // false: just the code's modules, in a color that contrasts with the base; true: modules on a plate
   art: null, // traced artwork ({ contours, aspect }), see art.js
-  artMode: 'off', // on the front: 'off' | 'above' the text | 'below' it | 'only' (instead of the text)
+  artMode: 'off', // on the front: 'off' | 'above' the text | 'below' it | 'right' or 'left' of it | 'only' (instead of the text)
   artLines: 2, // artwork height, in font sizes
   artShiftX: 0, // nudge, % of the font size
   artShiftY: 0,
@@ -73,7 +73,7 @@ export const DEFAULTS = {
 // ---- Base shapes -------------------------------------------------------------
 
 // Bases that fill the requested width x height (everything except 'text', which follows the letters).
-export const PLATE_SHAPES = ['plate', 'round', 'hex', 'dogbone'];
+export const PLATE_SHAPES = ['plate', 'sports', 'round', 'hex', 'dogbone'];
 
 function ellipsePoints(a, b, tol = 0.004) {
   const R = Math.max(a, b);
@@ -83,7 +83,7 @@ function ellipsePoints(a, b, tol = 0.004) {
 }
 
 // The outline of a base shape with half-extents hw x hh, centred on the origin: a counter-clockwise polyline (mm).
-//   plate    rounded rectangle
+//   plate    rounded rectangle (the Sports tag is one too, just long and thin)
 //   round    ellipse (a circle when width = height)
 //   hex      hexagon with points left and right, flat top and bottom, corners rounded like the plate's
 //   dogbone  a shaft with two round knobs at each end
@@ -295,7 +295,7 @@ export function buildKeychain(font, params) {
   const fitInShape = () => {
     const { hw, hh } = shapeBox;
     const stretch = p.fit === 'stretch';
-    if (p.baseShape === 'plate') {
+    if (p.baseShape === 'plate' || p.baseShape === 'sports') {
       // A rectangle: the text box is the plate pulled in by M.
       const iw = Math.max(0, 2 * (hw - M)), ih = Math.max(0, 2 * (hh - M));
       const s = Math.min(iw / ink.w, ih / ink.h);

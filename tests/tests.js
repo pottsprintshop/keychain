@@ -8,9 +8,10 @@ import { estimate, analyze, PRINT_DEFAULTS } from '../js/print.js';
 import { dxfFromModel, svgFromModel } from '../js/laser.js';
 import { parseBatch, runBatch } from '../js/batch.js';
 import { snapshot, diffState, toQuery, parseQuery, applyValues } from '../js/state.js';
-import { loadArtSource, traceArt } from '../js/art.js';
+import { loadArtSource, traceArt, placeArt } from '../js/art.js';
+import { ICONS, getIcon } from '../js/icons.js';
 import { fitArcs, sampleFitted } from '../js/arcs.js';
-import { circlePoints, plateRing, CL, toPath, allPaths, unionTree, offsetTree, runClipper } from '../js/clip.js';
+import { circlePoints, plateRing, CL, toPath, allPaths, unionTree, offsetTree, runClipper, treeToPolys } from '../js/clip.js';
 
 // ---- helpers ----------------------------------------------------------------------------
 
@@ -415,6 +416,86 @@ test('Potts Graffiti: the second T of a pair drops and tucks left instead of mer
   near(bboxOfPolylines(c.map((k) => flattenContour(k, 0.05))).y0, bboxOfPolylines(layoutText(carter, 'T', { align: 'left' }).map((k) => flattenContour(k, 0.05))).y0, 1e-6, 'other fonts are left alone');
 });
 
+test('the sports icons are clean artwork: in the unit box, no fragments, nothing thinner than half a millimetre at 16 mm tall', () => {
+  const mm = 16;
+  for (const key of Object.keys(ICONS)) {
+    const art = getIcon(key);
+    assert(art && art.contours.length >= 2 && art.aspect > 0.7 && art.aspect < 1.4, `${key}: ${art && art.contours.length} contours, aspect ${art && art.aspect}`);
+    for (const c of art.contours) {
+      for (const [x, y] of [c.start, ...c.segs.map((sg) => [sg[1], sg[2]])]) assert(y >= -1e-6 && y <= 1 + 1e-6 && Math.abs(x) <= art.aspect / 2 + 1e-6, `${key}: a point is outside the box`);
+    }
+    const paths = art.contours.map((c) => toPath([c.start, ...c.segs.map((sg) => [sg[1], sg[2]])].map(([x, y]) => [x * mm, y * mm])));
+    const solid = allPaths(unionTree(paths, CL.PolyFillType.pftEvenOdd));
+    const area = (ps) => netArea(treeToPolys(unionTree(ps)));
+    const A = area(solid);
+    assert(A > 0.15 * mm * mm, `${key}: the icon is nearly empty (${A.toFixed(1)} mm2)`);
+    const opened = allPaths(offsetTree(allPaths(offsetTree(solid, -0.25)), 0.25));
+    const closed = allPaths(offsetTree(allPaths(offsetTree(solid, 0.25)), -0.25));
+    assert((A - area(opened)) / A < 0.03, `${key}: ${(((A - area(opened)) / A) * 100).toFixed(1)}% of it is thinner than 0.5 mm`);
+    assert((area(closed) - A) / A < 0.03, `${key}: ${(((area(closed) - A) / A) * 100).toFixed(1)}% of it is gaps narrower than 0.5 mm`);
+    // no two outlines touch at a point (that makes an invalid, pinched solid)
+    const seen = new Map();
+    art.contours.forEach((c, i) => {
+      for (const [x, y] of [c.start, ...c.segs.map((sg) => [sg[1], sg[2]])]) {
+        const k = `${Math.round(x * 1e5)},${Math.round(y * 1e5)}`;
+        assert(!seen.has(k) || seen.get(k) === i, `${key}: two outlines touch at a point`);
+        seen.set(k, i);
+      }
+    });
+    // one solid piece, apart from the islands inside its cut-outs
+    assert(treeToPolys(unionTree(solid)).length === 1, `${key}: the icon is in ${treeToPolys(unionTree(solid)).length} pieces`);
+  }
+});
+
+test('artwork can sit beside the text, as tall as the text', () => {
+  const f = font(/Carter/);
+  const text = layoutText(f, 'Deutsch', { align: 'left' });
+  const tb = bboxOfPolylines(text.map((c) => flattenContour(c, 0.05)));
+  const art = getIcon('soccer');
+  for (const mode of ['right', 'left']) {
+    const placed = placeArt(art, text, { artMode: mode, artLines: 1, artShiftX: 0, artShiftY: 0 });
+    const ab = bboxOfPolylines(placed.map((c) => flattenContour(c, 0.05)));
+    near(ab.h, tb.h, 0.5, `${mode}: as tall as the text`);
+    near(ab.cy, tb.cy, 0.5, `${mode}: centred on the text vertically`);
+    assert(mode === 'right' ? ab.x0 > tb.x1 : ab.x1 < tb.x0, `${mode}: on the ${mode}, clear of the text`);
+    assert(placed.every((c) => c.line === -1), 'tagged as artwork');
+  }
+  const half = placeArt(art, text, { artMode: 'right', artLines: 0.5, artShiftX: 0, artShiftY: 0 });
+  near(bboxOfPolylines(half.map((c) => flattenContour(c, 0.05))).h, tb.h / 2, 0.5, 'artLines scales the icon');
+});
+
+test('the Sports tag: a long thin rectangle, a last name and an icon, all inside the base', () => {
+  const f = font(/Carter/);
+  const margin = 0.8 + 2.0;
+  for (const key of ['tennis', 'baseball', 'football', 'soccer']) {
+    const m = build(f, { baseShape: 'sports', text: 'Deutsch', width: 101.6, height: 25.4, art: getIcon(key), artMode: 'right', artLines: 1 });
+    near(m.size.w, 101.6, 0.1, `${key}: 4 in long, key hole tab included`);
+    near(m.size.h, 25.4, 0.1, `${key}: 1 in high`);
+    const base = m.layers.find((l) => l.key === 'base').polys;
+    const text = m.layers.find((l) => l.key === 'text').polys;
+    let worst = Infinity;
+    for (const p of text) for (const [x, y] of p.outer) {
+      assert(insidePolys(x, y, base), `${key}: the text or icon sticks out of the base`);
+      worst = Math.min(worst, distToRings(x, y, ringsOf(base)));
+    }
+    assert(worst >= margin - 0.05, `${key}: only ${worst.toFixed(2)} mm from the edge (margin ${margin})`);
+    // the icon is the piece at the right, about as tall as the letters
+    const b = bboxOf(text);
+    const right = text.filter((p) => p.outer.every(([x]) => x > b.x1 - (b.y1 - b.y0) * 1.6));
+    assert(right.length >= 1, `${key}: nothing at the right end`);
+    assert(m.warnings.length === 0, `${key}: ${m.warnings.join(' | ')}`);
+    for (const file of stlFilesFromModel(m, 't')) {
+      const st = stlStats(file.data), exp = volumeOf(m, file.key);
+      assert(st.open === 0, `${key} ${file.key}: ${st.open} open edges`);
+      near(st.vol / exp, 1, 0.001, `${key} ${file.key} volume`);
+    }
+  }
+  // without an icon it is just the name, and the hole sits at the left end
+  const plain = build(f, { baseShape: 'sports', text: 'Deutsch', width: 101.6, height: 25.4 });
+  assert(plain.exact.hole.cx < -40, 'the key hole is at the left end');
+  assert(plain.scale.x > 0.05, 'the name is a reasonable size');
+});
+
 test('line offsets move a line relative to the others; a frozen layout rebuilds identically', () => {
   const f = font(/Carter/);
   const m0 = build(f);
@@ -640,6 +721,7 @@ test('STEP: default plate with a QR code', () => stepCheck(build(font(/Carter/),
 test('STEP: text-shaped base, 3 rings, back text', () => stepCheck(build(font(/Graffiti/), { text: 'WHOOP\nWHOOP!!', rings: 3, backKind: 'text', backText: 'If found call\n303-555-0100' }), 'graffiti', { maxMB: 12 }), { step: true });
 test('STEP: dog bone base', () => stepCheck(build(font(/Carter/), { baseShape: 'dogbone', text: 'Rex', width: 70 }), 'dogbone', { maxMB: 4, exactText: true }), { step: true });
 test('STEP: hexagon base with a QR code', () => stepCheck(build(font(/Carter/), { baseShape: 'hex', width: 60, height: 52, backKind: 'qr', qrText: 'https://x.co/a' }), 'hex+QR', { maxMB: 6 }), { step: true });
+test('STEP: sports tag with an icon', () => stepCheck(build(font(/Carter/), { baseShape: 'sports', text: 'Deutsch', width: 101.6, height: 25.4, art: getIcon('tennis'), artMode: 'right', artLines: 1 }), 'sports', { maxMB: 5, exactText: true }), { step: true });
 test('STEP: lines dragged together (overlapping glyphs) keep exact text', () => stepCheck(build(font(/Carter/), { lineShiftsY: [0, 35] }), 'overlap', { maxMB: 4, exactText: true }), { step: true });
 
 // ---- runner ----------------------------------------------------------------------------------------

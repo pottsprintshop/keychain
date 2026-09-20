@@ -35,6 +35,10 @@
         <input type="file" id="fontFile" accept=".ttf,.otf,.woff" hidden>
       </div>
       <p class="hint" id="fontNote"></p>
+      <p class="hint" id="impactHint" hidden>
+        <span id="impactText">The Sports tag is meant for Impact, which this page can only read from your computer.</span>
+        <button type="button" id="useImpact" class="secondary tiny">Use Impact</button>
+      </p>
       <div class="slider-row">
         <label for="lineSpacing">Line spacing</label>
         <span class="val"><input type="number" class="numval" id="lineSpacingNum" min="0.5" max="1.6" step="0.05" aria-label="Line spacing value"><span class="unit">&times;</span></span>
@@ -180,26 +184,29 @@
             <button type="button" class="scale-btn" data-angle="270">Bottom</button>
           </div>
         </div>
-        <div class="control-row">
-          <label>Height <span class="dim">from the top</span></label>
-          <div class="scale-buttons" id="holeHeights">
-            <button type="button" class="scale-btn" data-h="20">20%</button>
-            <button type="button" class="scale-btn" data-h="50">50%</button>
-            <button type="button" class="scale-btn" data-h="80">80%</button>
+        <details class="nerd-menu" id="nerdHole">
+          <summary>Nerd Shite</summary>
+          <div class="control-row">
+            <label>Height <span class="dim">from the top</span></label>
+            <div class="scale-buttons" id="holeHeights">
+              <button type="button" class="scale-btn" data-h="20">20%</button>
+              <button type="button" class="scale-btn" data-h="50">50%</button>
+              <button type="button" class="scale-btn" data-h="80">80%</button>
+            </div>
           </div>
-        </div>
-        <div class="slider-pair">
-          <div class="slider-row">
-            <label for="holeAngle">Around the edge</label>
-            <span class="val"><input type="number" class="numval" id="holeAngleNum" min="0" max="360" step="1" aria-label="Angle around the edge in degrees"><span class="unit" id="holeAngleUnit"></span></span>
-            <input type="range" id="holeAngle" min="0" max="360" step="any" value="180">
+          <div class="slider-pair">
+            <div class="slider-row">
+              <label for="holeAngle">Around the edge</label>
+              <span class="val"><input type="number" class="numval" id="holeAngleNum" min="0" max="360" step="1" aria-label="Angle around the edge in degrees"><span class="unit" id="holeAngleUnit"></span></span>
+              <input type="range" id="holeAngle" min="0" max="360" step="any" value="180">
+            </div>
+            <div class="slider-row">
+              <label for="holePush">Sticks out</label>
+              <span class="val"><input type="number" class="numval" id="holePushNum" min="0" max="100" step="1" aria-label="How far it sticks out, percent"><span class="unit">%</span></span>
+              <input type="range" id="holePush" min="0" max="100" step="any" value="0">
+            </div>
           </div>
-          <div class="slider-row">
-            <label for="holePush">Sticks out</label>
-            <span class="val"><input type="number" class="numval" id="holePushNum" min="0" max="100" step="1" aria-label="How far it sticks out, percent"><span class="unit">%</span></span>
-            <input type="range" id="holePush" min="0" max="100" step="any" value="0">
-          </div>
-        </div>
+        </details>
       </div>
     </section>
 
@@ -305,6 +312,16 @@
             <option value="round">Round / oval</option>
             <option value="hex">Hexagon</option>
             <option value="dogbone">Dog bone</option>
+            <option value="sports">Sports tag</option>
+          </select>
+        </label>
+        <label id="sportWrap" hidden>Sport
+          <select id="sportIcon">
+            <option value="tennis" selected>Tennis racquet</option>
+            <option value="baseball">Baseball</option>
+            <option value="football">Football</option>
+            <option value="soccer">Soccer ball</option>
+            <option value="none">No icon</option>
           </select>
         </label>
         <label id="plateRadiusWrap" hidden>Corner radius (mm) <input type="number" id="plateRadius" min="0" step="0.5"></label>

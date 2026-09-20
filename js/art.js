@@ -128,18 +128,26 @@ export async function traceArt(source, opts) {
 }
 
 // Place artwork on the front, like another line of text. Returns contours in the text's nominal units,
-// tagged `line: -1`. `text` is the text's contours (possibly none); mode is 'above', 'below' or 'only'.
+// tagged `line: -1`. `text` is the text's contours (possibly none); mode is 'above' or 'below' the text, 'right' or
+// 'left' of it (as tall as the text block, times `artLines`), or 'only' (instead of the text).
 export function placeArt(art, text, p) {
-  const s = Math.max(0.1, p.artLines) * NOMINAL; // artwork height, in font sizes
   const dx = ((p.artShiftX || 0) / 100) * NOMINAL, dy = ((p.artShiftY || 0) / 100) * NOMINAL;
+  let s = Math.max(0.1, p.artLines) * NOMINAL; // artwork height, in font sizes
   let cx = 0, base;
   if (!text.length || p.artMode === 'only') {
     base = -s / 2;
   } else {
     const bb = bboxOfPolylines(text.map((c) => flattenContour(c, 0.05)));
-    const gap = 0.3 * NOMINAL;
-    cx = bb.cx;
-    base = p.artMode === 'below' ? bb.y0 - gap - s : bb.y1 + gap;
+    if (p.artMode === 'left' || p.artMode === 'right') {
+      s = Math.max(0.1, p.artLines) * bb.h;
+      const gap = 0.3 * bb.h;
+      cx = p.artMode === 'right' ? bb.x1 + gap + (art.aspect * s) / 2 : bb.x0 - gap - (art.aspect * s) / 2;
+      base = bb.cy - s / 2;
+    } else {
+      const gap = 0.3 * NOMINAL;
+      cx = bb.cx;
+      base = p.artMode === 'below' ? bb.y0 - gap - s : bb.y1 + gap;
+    }
   }
   const P = (x, y) => [cx + dx + x * s, base + dy + y * s];
   return art.contours.map((c) => ({

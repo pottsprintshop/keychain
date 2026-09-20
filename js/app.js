@@ -8,6 +8,7 @@ import { estimate, analyze, PRINT_DEFAULTS } from './print.js';
 import { snapshot, diffState, toQuery, parseQuery, applyValues } from './state.js';
 import { parseBatch, runBatch } from './batch.js';
 import { dxfFromModel, svgFromModel } from './laser.js';
+import { getIcon } from './icons.js';
 
 const $ = (id) => document.getElementById(id);
 const MM_PER_IN = 25.4;
@@ -39,6 +40,7 @@ function num(input, fallback, min = 0) {
 
 function readParams() {
   const k = el.unit.value === 'in' ? MM_PER_IN : 1;
+  const icon = el.baseShape.value === 'sports' ? getIcon(el.sportIcon.value) : null;
   return {
     text: el.text.value,
     align: el.align.value,
@@ -83,11 +85,16 @@ function readParams() {
     qrText: el.qrText.value,
     qrEcc: el.qrEcc.value,
     qrPlate: el.qrPlate.checked,
-    art,
-    artMode: el.artMode.value,
-    artLines: num(el.artLines, DEFAULTS.artLines, 0.1),
-    artShiftX: num(el.artShiftX, 0, -1000),
-    artShiftY: num(el.artShiftY, 0, -1000),
+    // The Sports tag puts its icon beside the text (as tall as the text); otherwise it's the uploaded artwork.
+    ...(icon
+      ? { art: icon, artMode: 'right', artLines: 1, artShiftX: 0, artShiftY: 0 }
+      : {
+          art,
+          artMode: el.artMode.value,
+          artLines: num(el.artLines, DEFAULTS.artLines, 0.1),
+          artShiftX: num(el.artShiftX, 0, -1000),
+          artShiftY: num(el.artShiftY, 0, -1000),
+        }),
   };
 }
 
@@ -158,7 +165,9 @@ function syncLabels() {
   el.backArtNote.hidden = kind !== 'art';
   syncLayers();
   // The corner radius is for the rectangle and hexagon; the shaft thickness for the dog bone.
-  el.plateRadiusWrap.hidden = !['plate', 'hex'].includes(el.baseShape.value);
+  el.plateRadiusWrap.hidden = !['plate', 'hex', 'sports'].includes(el.baseShape.value);
+  el.sportWrap.hidden = el.baseShape.value !== 'sports';
+  el.impactHint.hidden = !(el.baseShape.value === 'sports' && !currentFontIsImpact());
   el.boneShaftWrap.hidden = el.baseShape.value !== 'dogbone';
 }
 
@@ -408,15 +417,78 @@ function enableLineDragging() {
 // Where the key hole naturally goes depends on the shape: a dog bone hangs from the middle of its top edge (the tab
 // nests between the knobs), everything else from the left. Switching shape moves the hole to the new shape's spot,
 // unless it was moved by hand.
-const SHAPE_DEFAULTS = { dogbone: { holeAngle: 90, borderW: 0.8 } }; // (the dog bone also gets a 0.8 mm rim)
-const SHAPE_KEYED = ['holeAngle', 'borderW'];
+// What each shape starts with, where that differs from the usual: the dog bone hangs from the middle of its top edge
+// and has a 0.8 mm rim; the Sports tag is a long thin rectangle (4 x 1 in) with a last name on it. Picking a shape
+// moves these to that shape's values, but only the ones still at the previous shape's (so nothing you set by hand is lost).
+const SHAPE_DEFAULTS = {
+  dogbone: { holeAngle: 90, borderW: 0.8 },
+  sports: { width: 101.6, height: 25.4, text: 'Deutsch' },
+};
+const SHAPE_KEYED = ['holeAngle', 'borderW']; // plain numeric controls
 const shapeDefault = (shape, key) => SHAPE_DEFAULTS[shape]?.[key] ?? DEFAULTS[key];
+const sizeFor = (shape) => [shapeDefault(shape, 'width'), shapeDefault(shape, 'height')]; // mm
+const unitMM = () => (el.unit.value === 'in' ? MM_PER_IN : 1);
+const sizeIs = (mm) => Math.abs(Number(el.width.value) * unitMM() - mm[0]) < 0.06 && Math.abs(Number(el.height.value) * unitMM() - mm[1]) < 0.06;
+const setSize = ([w, h]) => {
+  const digits = el.unit.value === 'in' ? 3 : 1;
+  el.width.value = +(w / unitMM()).toFixed(digits);
+  el.height.value = +(h / unitMM()).toFixed(digits);
+};
+
 let prevShape = el.baseShape.value;
 el.baseShape.addEventListener('change', () => {
-  for (const key of SHAPE_KEYED) if (Number(el[key].value) === shapeDefault(prevShape, key)) el[key].value = shapeDefault(el.baseShape.value, key);
-  prevShape = el.baseShape.value;
+  const shape = el.baseShape.value;
+  for (const key of SHAPE_KEYED) if (Number(el[key].value) === shapeDefault(prevShape, key)) el[key].value = shapeDefault(shape, key);
+  if (sizeIs(sizeFor(prevShape))) setSize(sizeFor(shape));
+  if (el.text.value === shapeDefault(prevShape, 'text')) {
+    el.text.value = shapeDefault(shape, 'text');
+    renderLineShifts();
+  }
+  prevShape = shape;
+  if (shape === 'sports') useImpact().then(() => schedule());
   schedule();
 });
+
+// ---- Impact, for the Sports tag ---------------------------------------------------------
+// Impact is licensed to the computer it came with, so it isn't shipped with this page. On desktop Chrome and Edge the
+// page can read it from the computer (the browser asks first); anywhere else, Upload font... does the same.
+
+const isImpact = (font) => /^impact\b/i.test(fontDisplayName(font));
+const currentFontIsImpact = () => {
+  const entry = fonts.get(el.font.value);
+  return !!entry && isImpact(entry.font);
+};
+
+async function useImpact() {
+  let hit = [...fonts].find(([, v]) => isImpact(v.font));
+  let why = 'The Sports tag is meant for Impact, which this page can only read from your computer.';
+  if (!hit && typeof window.queryLocalFonts === 'function') {
+    try {
+      const found = (await window.queryLocalFonts({ postscriptNames: ['Impact'] })).find((f) => /^impact/i.test(f.family) || /^impact/i.test(f.fullName));
+      if (found) {
+        const font = parseFont(await (await found.blob()).arrayBuffer());
+        const value = 'l:' + fonts.size;
+        addFontOption(value, 'Impact (this computer)', font);
+        hit = [value];
+      } else {
+        why = "This computer doesn't seem to have Impact, or the browser wouldn't share it. ";
+      }
+    } catch (err) {
+      console.info('Could not read installed fonts:', err);
+      why = "The browser wouldn't share your installed fonts. ";
+    }
+  } else if (!hit) {
+    why = "This browser can't look up installed fonts. ";
+  }
+  if (hit) {
+    el.font.value = hit[0];
+  } else {
+    el.impactText.textContent = why + 'Use Upload font\u2026 and pick Impact (on a Mac it is /System/Library/Fonts/Supplemental/Impact.ttf).';
+  }
+  syncLabels();
+  return !!hit;
+}
+el.useImpact.addEventListener('click', () => useImpact().then(() => schedule()));
 
 for (const b of el.holeQuick.children) {
   b.addEventListener('click', () => {
@@ -516,7 +588,7 @@ function designQuery() {
   const values = diffState(snapshot(document.querySelector('main')), defaultState);
   const entry = fonts.get(el.font.value);
   const first = fonts.get(el.font.options[0] && el.font.options[0].value);
-  if (entry && !el.font.value.startsWith('u:') && entry !== first) values.font = entry.name;
+  if (entry && !/^[ul]:/.test(el.font.value) && entry !== first) values.font = entry.name;
   if (lineShifts.some(Boolean)) values.lineShifts = csv(lineShifts);
   if (lineShiftsY.some(Boolean)) values.lineShiftsY = csv(lineShiftsY);
   // A shape whose usual hole spot or border isn't the default (the dog bone's) always spells them out, so its links keep them.
@@ -538,7 +610,12 @@ function applyFromUrl() {
   const { font, lineShifts: ls, lineShiftsY: lsy, ...controls } = values;
   applyValues(document.querySelector('main'), controls);
   // A link that names a shape but not where the hole goes (or its border) gets that shape's usual ones.
-  if (controls.baseShape) for (const key of SHAPE_KEYED) if (!(key in controls)) el[key].value = String(shapeDefault(el.baseShape.value, key));
+  if (controls.baseShape) {
+    const shape = el.baseShape.value;
+    for (const key of SHAPE_KEYED) if (!(key in controls)) el[key].value = String(shapeDefault(shape, key));
+    if (!('width' in controls) && !('height' in controls)) setSize(sizeFor(shape));
+    if (!('text' in controls)) el.text.value = shapeDefault(shape, 'text');
+  }
   if (font) {
     const opt = [...el.font.options].find((o) => o.textContent === font);
     if (opt) el.font.value = opt.value;
@@ -549,6 +626,8 @@ function applyFromUrl() {
   prevUnit = el.unit.value;
   renderLineShifts();
   el.nerdSize.open = el.fit.value !== 'contain' || !el.sizeIncludesTab.checked; // show the folded settings if a link changed them
+  const angle = Math.round(Number(el.holeAngle.value));
+  el.nerdHole.open = Number(el.holePush.value) > 0 || ![0, 90, 180, 270].includes(angle);
 }
 
 async function copyLink() {
@@ -561,7 +640,7 @@ async function copyLink() {
   }
 }
 
-const usesUnsharable = () => el.font.value.startsWith('u:') || !!art;
+const usesUnsharable = () => /^[ul]:/.test(el.font.value) || !!art;
 
 // ---- Batch ---------------------------------------------------------------------------
 

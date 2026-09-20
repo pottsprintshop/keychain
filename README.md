@@ -30,29 +30,44 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   up/down slider for each line, side by side. In the Top view you can also drag a line of text
   directly; the keychain re-fits to your size when you let go.
 - **Font** — the bundled fonts (see `fonts/fonts.json`), or **Upload font…** (TTF / OTF / WOFF)
-  for the current session only. Font, alignment and upload share a line.
-- **Size** (in the right column, under the preview) — width and height in inches or mm, and **Text
-  size**: the text as a share of the biggest that fits, independent of the other dimensions. On a
-  plate shape the keychain keeps its width and height and the text gets more room around it; when the
-  base follows the text, smaller text makes a smaller keychain. Under *Nerd Shite*: *Keep font
-  proportions* fits the text inside the box and *Stretch text to fill* fills it exactly; by default the
-  size is the keychain body and the key hole tab sticks out beyond it, and *Count the key hole tab in
-  the size* includes it.
-- **Layers** — color (preview and STEP), height, and how far the outline / base extend. *Solid base*
-  fills the gaps between letters, and *Blend inside corners* / *Round outside corners* put fillets on
-  the base (default 1 mm blend where the key hole tab joins the body); the outline and text are never
-  altered.
+  for the current session only. Font, alignment and upload share a line. In *Potts Graffiti* two T's
+  in a row (T and t are the same letter there) would run together into one long crossbar, so the
+  second one drops a little and tucks left under the first, and the letters after it follow.
+- **Size** (in the right column, under the preview) — width and height in inches or mm, **counting the
+  key hole tab** by default, and **Text size**: the text as a share of the biggest that fits,
+  independent of the other dimensions. On a plate shape the keychain keeps its width and height and the
+  text gets more room around it; when the base follows the text, smaller text makes a smaller keychain.
+  Under *Nerd Shite*: *Keep font proportions* fits the text inside the box and *Stretch text to fill*
+  fills it exactly, and *Count the key hole tab in the size* can be turned off (the size is then the
+  body, and the tab sticks out beyond it).
+- **Layers** — color (preview and STEP), height, and how far each layer extends. Every layer has a
+  red **minus** to take it away (the text, any outline, even the base; at least one stays) and a
+  green **plus** adds an outline layer (up to three). A removed text or base row stays in the list,
+  dimmed, with a plus to bring it back. Without a base there is nothing for the key hole, back or
+  border to attach to, so those panels switch off. Under *Advanced*: *Blend inside corners* /
+  *Round outside corners* put fillets on the base (default 1 mm blend where the key hole tab joins the
+  body), and *Solid base* fills the gaps between letters; the outline and text are never altered.
 - **Base shape** (above the preview) — *Follow the text* or a plate that fills the whole width × height
   you set: *Rectangle* (with a corner radius), *Round / oval* (a circle when width = height), *Hexagon*
-  (points left and right, corners rounded by the same radius) or *Dog bone* (a shaft with two knobs at
-  each end; *Shaft thickness* sets how much room the text gets). On a plate the text is scaled to the
-  biggest size that keeps the full outline + base margin inside the shape, and the key hole slides
-  along the shape's edge. On the dog bone it starts in the middle of the top edge, between the knobs;
-  picking another shape moves it to that shape's usual spot unless you've moved it yourself.
-- **Key hole** — diameter, edge distance, and where it sits: quick Left / Top / Right / Bottom
-  buttons, an *Around the edge* slider that slides it smoothly all the way around the keychain
-  (180° = centered on the left), 20% / 50% / 80% height buttons, and *Sticks out* to pull it
-  further from the text. Every slider's value is a box you can click and type into.
+  (points left and right, corners rounded by the same radius), *Dog bone* (a shaft with two knobs at
+  each end; *Shaft thickness* sets how much room the text gets) or *Sports tag* (see below). On a plate
+  the text is scaled to the biggest size that keeps the full outline + base margin inside the shape,
+  and the key hole slides along the shape's edge. **Border** adds a raised rim of that width around
+  the edge of the base (tab included), as tall as the layer above the base and colored like it; it is
+  its own body in the exports. The dog bone starts with the key hole in the middle of its top edge,
+  between the knobs, and a 0.8 mm border. Picking another shape moves these to that shape's usual
+  values unless you've changed them yourself.
+- **Sports tag** — a long, thin rectangle (4 × 1 in) meant for a last name and a sport icon: tennis
+  racquet, baseball, football or soccer ball, drawn beside the text and as tall as it. The icons are
+  built in (`js/icons.js`, made with Clipper cut-outs, nothing thinner than half a millimetre at 16 mm
+  tall). The tag is meant for the **Impact** font, which is licensed to the computer it came with and so
+  isn't shipped with the page: on desktop Chrome or Edge picking the tag looks it up on your computer
+  (the browser asks first); otherwise use *Upload font…* (on a Mac,
+  `/System/Library/Fonts/Supplemental/Impact.ttf`).
+- **Key hole** — diameter, edge distance, gap to the outline, and quick Left / Top / Right / Bottom
+  buttons. Under *Nerd Shite*: 20% / 50% / 80% height buttons, an *Around the edge* slider that slides
+  it smoothly all the way around the keychain (180° = centered on the left), and *Sticks out* to pull
+  it further from the text. Every slider's value is a box you can click and type into.
 - **QR code on the back** — type a link or any text and a QR code is recessed into the back of the
   base (see below).
 - **Preview** — live 3D view (Top / 3D / Back, drag to rotate, scroll to zoom).
@@ -163,6 +178,7 @@ js/art.js                 artwork tracing (ImageTracer) and placement
 js/print.js               filament estimate and printability checks
 js/state.js, js/batch.js  shareable links, batch runs
 js/laser.js               DXF / SVG export
+js/icons.js               built-in sports icons (Clipper cut-outs)
 js/mesh.js                layer meshes and STL packaging
 js/preview.js             three.js preview
 js/exporters.js           binary STL, zip, download

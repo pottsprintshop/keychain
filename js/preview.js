@@ -132,8 +132,11 @@ export function createPreview(container) {
       return { key: layer.key, name: layer.name, geometry, mesh };
     });
     const sizeChanged = Math.abs(size.w - model.size.w) > 1e-6 || Math.abs(size.h - model.size.h) > 1e-6;
+    // A much bigger or differently shaped keychain (a new shape, a new size) gets the camera pulled back to fit it;
+    // small tweaks leave the view where you put it.
+    const jumped = Math.abs(model.size.w / size.w - 1) > 0.2 || Math.abs(model.size.h / size.h - 1) > 0.2;
     size = model.size;
-    if (sizeChanged && !setModel.first) {
+    if (sizeChanged && (!setModel.first || jumped)) {
       setModel.first = true;
       frame(mode);
     } else {

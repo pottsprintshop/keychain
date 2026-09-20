@@ -46,6 +46,60 @@ export function createPreview(container) {
   fill.position.set(1, -0.5, 0.8);
   camera.add(fill);
 
+  // Dragging a line of text (Top view). This listener is added before the orbit controls' own, in the
+  // capture phase, so grabbing a line moves it and grabbing anything else still rotates the view.
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  const dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  const hitPoint = new THREE.Vector3();
+  let handlers = null; // { pick(x, y) -> line | -1, start(line), move(line, dx, dy), end(line) }
+  let drag = null;
+  const canvas = renderer.domElement;
+  const toModel = (ev) => {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    dragPlane.constant = -size.d; // the top of the text
+    return raycaster.ray.intersectPlane(dragPlane, hitPoint) ? [hitPoint.x, hitPoint.y] : null;
+  };
+  canvas.addEventListener(
+    'pointerdown',
+    (ev) => {
+      if (!handlers || mode !== 'top' || ev.button !== 0) return;
+      const pt = toModel(ev);
+      const line = pt ? handlers.pick(pt[0], pt[1]) : -1;
+      if (line < 0) return;
+      ev.stopImmediatePropagation();
+      ev.preventDefault();
+      controls.enabled = false;
+      canvas.setPointerCapture(ev.pointerId);
+      drag = { line, x0: pt[0], y0: pt[1] };
+      canvas.style.cursor = 'grabbing';
+      handlers.start(line);
+    },
+    { capture: true },
+  );
+  canvas.addEventListener('pointermove', (ev) => {
+    if (drag) {
+      const pt = toModel(ev);
+      if (pt) handlers.move(drag.line, pt[0] - drag.x0, pt[1] - drag.y0);
+    } else if (handlers && mode === 'top' && ev.buttons === 0) {
+      const pt = toModel(ev);
+      canvas.style.cursor = pt && handlers.pick(pt[0], pt[1]) >= 0 ? 'grab' : '';
+    }
+  });
+  const endDrag = (ev) => {
+    if (!drag) return;
+    const { line } = drag;
+    drag = null;
+    controls.enabled = true;
+    canvas.style.cursor = '';
+    try { canvas.releasePointerCapture(ev.pointerId); } catch (e) { /* already released */ }
+    handlers.end(line);
+  };
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = false;
   controls.screenSpacePanning = true;
@@ -120,6 +174,7 @@ export function createPreview(container) {
     setModel,
     setColors,
     setView: frame,
+    enableDrag: (h) => { handlers = h; },
     resize,
     layers: () => layers,
     png: () => renderer.domElement.toDataURL('image/png'),

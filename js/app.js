@@ -1,5 +1,5 @@
-import { parseFont, fontDisplayName } from './layout.js';
-import { buildKeychain, angleForHeight, DEFAULTS } from './geometry.js';
+import { parseFont, fontDisplayName, NOMINAL } from './layout.js';
+import { buildKeychain, angleForHeight, pickLine, DEFAULTS } from './geometry.js';
 import { createPreview } from './preview.js';
 import { stlFromGeometries, zipStore, downloadBlob, slug } from './exporters.js';
 
@@ -16,7 +16,7 @@ const el = {
   holeEnabled: $('holeEnabled'), holeControls: $('holeControls'), holeDia: $('holeDia'), holeEdge: $('holeEdge'),
   holeGap: $('holeGap'), holeAngle: $('holeAngle'), holeAngleVal: $('holeAngleVal'), holePush: $('holePush'), holePushVal: $('holePushVal'),
   holeQuick: $('holeQuick'), holeHeights: $('holeHeights'), lineShifts: $('lineShifts'), lineShiftList: $('lineShiftList'),
-  qrEnabled: $('qrEnabled'), qrControls: $('qrControls'), qrText: $('qrText'), qrEcc: $('qrEcc'), qrSize: $('qrSize'),
+  qrEnabled: $('qrEnabled'), qrControls: $('qrControls'), qrText: $('qrText'), qrEcc: $('qrEcc'), qrAuto: $('qrAuto'), qrPlate: $('qrPlate'), qrSize: $('qrSize'),
   qrDepth: $('qrDepth'), colorQr: $('colorQr'), qrInfo: $('qrInfo'),
   viewTop: $('viewTop'), view3d: $('view3d'), viewBack: $('viewBack'), preview: $('preview'), status: $('status'),
   format: $('format'), downloadBtn: $('downloadBtn'), exportInfo: $('exportInfo'),
@@ -27,7 +27,12 @@ let model = null;
 let prevUnit = el.unit.value;
 let timer = null;
 let preview = null;
-let lineShifts = []; // sideways nudge per text line (percent), indexed by line number
+let lineShifts = []; // sideways nudge per text line (percent of the widest line), indexed by line number
+let lineShiftsY = []; // vertical nudge per text line (percent of the font size)
+const shiftUi = new Map(); // line number -> { rx, ry, show() }, so a drag can move the sliders
+let dragBase = null; // while dragging a line: the layout to hold still, and where the line started
+let dragQueued = false;
+const SHIFT_X_MAX = 100, SHIFT_Y_MAX = 150;
 
 // ---- Reading the form --------------------------------------------------------
 
@@ -63,15 +68,29 @@ function readParams() {
     holeAngle: num(el.holeAngle, DEFAULTS.holeAngle, 0),
     holePush: num(el.holePush, 0, 0) / 100,
     lineShifts: lineShifts.slice(),
+    lineShiftsY: lineShiftsY.slice(),
     qrEnabled: el.qrEnabled.checked,
     qrText: el.qrText.value,
     qrEcc: el.qrEcc.value,
+    qrPlate: el.qrPlate.checked,
     qrSize: num(el.qrSize, 0, 0),
     qrDepth: num(el.qrDepth, DEFAULTS.qrDepth, 0.2),
   };
 }
 
-const colors = () => ({ text: el.colorText.value, outline: el.colorOutline.value, base: el.colorBase.value, qr: el.colorQr.value });
+// Light or dark, whichever contrasts with the base (perceived brightness of the base color).
+const brightness = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+};
+function syncQrColor() {
+  if (el.qrAuto.checked) el.colorQr.value = brightness(el.colorBase.value) < 0.5 ? '#f2f2f2' : '#16161a';
+  el.colorQr.disabled = el.qrAuto.checked;
+}
+const colors = () => {
+  syncQrColor();
+  return { text: el.colorText.value, outline: el.colorOutline.value, base: el.colorBase.value, qr: el.colorQr.value };
+};
 
 function fmtSize(w, h, unit) {
   return unit === 'in' ? `${(w / MM_PER_IN).toFixed(2)} × ${(h / MM_PER_IN).toFixed(2)} in` : `${w.toFixed(1)} × ${h.toFixed(1)} mm`;
@@ -90,7 +109,9 @@ function syncLabels() {
 
 // ---- Building ------------------------------------------------------------------
 
-function rebuild() {
+// `fixed` (only while dragging a line) is the previous build's layout, so the keychain doesn't re-fit or
+// re-centre under the pointer; a normal rebuild when the drag ends snaps it back to the size you set.
+function rebuild(fixed = null) {
   clearTimeout(timer);
   timer = null;
   syncLabels();
@@ -98,9 +119,10 @@ function rebuild() {
   if (!entry) return;
   try {
     const t0 = performance.now();
-    const m = buildKeychain(entry.font, readParams());
+    const m = buildKeychain(entry.font, { ...readParams(), fixed });
     if (!m) {
       model = null;
+      el.status.classList.remove('warn');
       el.status.textContent = 'Type some text to see your keychain.';
       el.downloadBtn.disabled = true;
       el.finalSize.textContent = ' ';
@@ -113,10 +135,14 @@ function rebuild() {
       `Overall size${m.params.holeEnabled ? ' with key hole' : ''}: ${fmtSize(m.size.w, m.size.h, el.unit.value)} × ${m.size.d.toFixed(1)} mm thick` +
       ` (${fmtSize(m.size.w, m.size.h, el.unit.value === 'in' ? 'mm' : 'in')})`;
     if (m.qr) {
-      el.qrInfo.textContent = `QR code: ${m.qr.n}\u00d7${m.qr.n} modules, ${m.qr.module.toFixed(2)} mm each, ${m.qr.side.toFixed(1)} mm square. Flip the keychain like a page to scan it.`;
+      const negative = !m.qr.plate && brightness(el.colorQr.value) > brightness(el.colorBase.value);
+      el.qrInfo.textContent =
+        `QR code: ${m.qr.n}\u00d7${m.qr.n} modules, ${m.qr.module.toFixed(2)} mm each, ${m.qr.side.toFixed(1)} mm square. Flip the keychain like a page to scan it.` +
+        (negative ? ' Light on dark is a negative image: most phones read it, but test yours (or use the plate under Nerd Shite).' : '');
     } else if (el.qrEnabled.checked) {
       el.qrInfo.textContent = el.qrText.value.trim() ? 'The QR code could not be made — see the note under the preview.' : 'Type what the QR code should say.';
     }
+    el.status.classList.toggle('warn', m.warnings.length > 0);
     el.status.textContent = m.warnings.length
       ? m.warnings.join(' ')
       : `Built in ${Math.round(performance.now() - t0)} ms — drag to rotate, scroll to zoom.`;
@@ -124,6 +150,7 @@ function rebuild() {
     void p;
   } catch (err) {
     console.error(err);
+    el.status.classList.add('warn');
     el.status.textContent = 'Could not build this design: ' + err.message;
     el.downloadBtn.disabled = true;
   }
@@ -137,49 +164,117 @@ function schedule() {
 
 // ---- Per-line offsets ---------------------------------------------------------------
 
+function setShift(i, x, y) {
+  lineShifts[i] = Math.max(-SHIFT_X_MAX, Math.min(SHIFT_X_MAX, x));
+  lineShiftsY[i] = Math.max(-SHIFT_Y_MAX, Math.min(SHIFT_Y_MAX, y));
+  const ui = shiftUi.get(i);
+  if (ui) {
+    ui.rx.value = String(Math.round(lineShifts[i]));
+    ui.ry.value = String(Math.round(lineShiftsY[i]));
+    ui.show();
+  }
+}
+
 function renderLineShifts() {
   const lines = el.text.value.replace(/\r/g, '').split('\n');
   const used = lines.map((text, i) => [text.trim(), i]).filter(([text]) => text);
   el.lineShifts.hidden = used.length < 2;
   el.lineShiftList.replaceChildren();
+  shiftUi.clear();
   if (used.length < 2) return;
-  for (const [text, i] of used) {
-    const row = document.createElement('div');
-    row.className = 'control-row shift-row';
-    const label = document.createElement('label');
-    label.append(`Line ${i + 1} `);
-    const name = document.createElement('em');
-    name.textContent = text.length > 14 ? text.slice(0, 13) + '\u2026' : text;
-    const value = document.createElement('span');
+  const slider = (min, max, value, label) => {
     const range = document.createElement('input');
     range.type = 'range';
-    range.min = '-50';
-    range.max = '50';
+    range.min = String(min);
+    range.max = String(max);
     range.step = '1';
-    range.value = String(lineShifts[i] || 0);
+    range.value = String(Math.round(value || 0));
+    range.setAttribute('aria-label', label);
+    return range;
+  };
+  for (const [text, i] of used) {
+    const block = document.createElement('div');
+    block.className = 'shift-block';
+    const head = document.createElement('div');
+    head.className = 'shift-head';
+    const title = document.createElement('span');
+    title.append(`Line ${i + 1} `);
+    const name = document.createElement('em');
+    name.textContent = text.length > 18 ? text.slice(0, 17) + '\u2026' : text;
+    title.append(name);
     const reset = document.createElement('button');
     reset.type = 'button';
     reset.className = 'secondary tiny';
     reset.textContent = '\u21ba';
     reset.title = 'Reset this line';
     reset.setAttribute('aria-label', `Reset line ${i + 1}`);
-    const show = () => (value.textContent = `${Number(range.value) > 0 ? '+' : ''}${range.value}%`);
+    head.append(title, reset);
+
+    const rx = slider(-SHIFT_X_MAX, SHIFT_X_MAX, lineShifts[i], `Line ${i + 1} left or right`);
+    const ry = slider(-SHIFT_Y_MAX, SHIFT_Y_MAX, lineShiftsY[i], `Line ${i + 1} up or down`);
+    const vx = document.createElement('span');
+    const vy = document.createElement('span');
+    const sign = (v) => `${Number(v) > 0 ? '+' : ''}${v}%`;
+    const show = () => {
+      vx.textContent = sign(rx.value);
+      vy.textContent = sign(ry.value);
+    };
+    const row = (icon, range, value) => {
+      const r = document.createElement('div');
+      r.className = 'control-row shift-row';
+      const label = document.createElement('label');
+      label.append(icon + ' ', value);
+      r.append(label, range);
+      return r;
+    };
+    block.append(head, row('\u2194', rx, vx), row('\u2195', ry, vy));
     show();
-    range.addEventListener('input', () => {
-      lineShifts[i] = Number(range.value);
+    shiftUi.set(i, { rx, ry, show });
+    rx.addEventListener('input', () => {
+      lineShifts[i] = Number(rx.value);
+      show();
+      schedule();
+    });
+    ry.addEventListener('input', () => {
+      lineShiftsY[i] = Number(ry.value);
       show();
       schedule();
     });
     reset.addEventListener('click', () => {
-      range.value = '0';
-      lineShifts[i] = 0;
-      show();
+      setShift(i, 0, 0);
       schedule();
     });
-    label.append(name, ' ', value);
-    row.append(label, range, reset);
-    el.lineShiftList.append(row);
+    el.lineShiftList.append(block);
   }
+}
+
+// Drag a line of text in the Top view.
+function enableLineDragging() {
+  preview.enableDrag({
+    // Only with two or more lines; a single line is always re-centred, so moving it would just snap back.
+    pick: (x, y) => (model && model.lines.length > 1 ? pickLine(model.lines, x, y) : -1),
+    start: (i) => {
+      if (timer) rebuild();
+      dragBase = { layout: model.layout, x: lineShifts[i] || 0, y: lineShiftsY[i] || 0 };
+    },
+    move: (i, dx, dy) => {
+      if (!dragBase) return;
+      const L = dragBase.layout;
+      // millimetres -> slider units: sideways is relative to the widest line, vertical to the font size
+      setShift(i, dragBase.x + (dx / (L.sx * L.widest)) * 100, dragBase.y + (dy / (L.sy * NOMINAL)) * 100);
+      if (!dragQueued) {
+        dragQueued = true;
+        requestAnimationFrame(() => {
+          dragQueued = false;
+          if (dragBase) rebuild(dragBase.layout);
+        });
+      }
+    },
+    end: () => {
+      dragBase = null;
+      rebuild();
+    },
+  });
 }
 
 for (const b of el.holeQuick.children) {
@@ -325,6 +420,7 @@ function initForm() {
 async function init() {
   initForm();
   preview = createPreview(el.preview);
+  enableLineDragging();
   try {
     await loadBundledFonts();
   } catch (err) {
@@ -338,7 +434,7 @@ async function init() {
     el.text, el.font, el.align, el.lineSpacing, el.width, el.height, el.fit, el.sizeIncludesTab,
     el.textH, el.midH, el.baseH, el.outline, el.baseMargin, el.fillGaps, el.baseShape, el.plateRadius, el.roundIn, el.roundOut,
     el.holeEnabled, el.holeDia, el.holeEdge, el.holeGap, el.holeAngle, el.holePush,
-    el.qrEnabled, el.qrText, el.qrEcc, el.qrSize, el.qrDepth,
+    el.qrEnabled, el.qrText, el.qrEcc, el.qrPlate, el.qrSize, el.qrDepth,
   ];
   el.text.addEventListener('input', renderLineShifts);
   for (const input of live) input.addEventListener('input', schedule);
@@ -347,8 +443,11 @@ async function init() {
     if (el.qrEnabled.checked) setView('back');
     else if (el.viewBack.classList.contains('active')) setView('top');
   });
-  for (const input of [el.colorText, el.colorOutline, el.colorBase, el.colorQr]) {
-    input.addEventListener('input', () => preview.setColors(colors()));
+  for (const input of [el.colorText, el.colorOutline, el.colorBase, el.colorQr, el.qrAuto]) {
+    input.addEventListener('input', () => {
+      preview.setColors(colors());
+      schedule(); // refreshes the QR note (light-on-dark or not)
+    });
   }
   el.viewTop.addEventListener('click', () => setView('top'));
   el.view3d.addEventListener('click', () => setView('3d'));

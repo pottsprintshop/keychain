@@ -19,20 +19,27 @@ export function fontDisplayName(font) {
   return pick(n.fullName) || pick(n.fontFamily) || 'Uploaded font';
 }
 
-// Lay out `text` (newlines split lines) and return unscaled contours.
-// lineShifts[i] nudges line i sideways, as a percentage of the widest line.
-export function layoutText(font, text, { align = 'center', lineSpacing = 1, lineShifts = [] } = {}) {
+// Advance width of the widest line, in nominal units (the unit the sideways offsets are relative to).
+export function widestLine(font, text) {
+  const lines = String(text).replace(/\r/g, '').split('\n');
+  return Math.max(1, ...lines.map((l) => (l.trim() ? font.getAdvanceWidth(l, NOMINAL) : 0)));
+}
+
+// Lay out `text` (newlines split lines) and return unscaled contours, each tagged with its line number.
+// lineShifts[i] nudges line i sideways (percent of the widest line); lineShiftsY[i] nudges it up
+// (percent of the font size).
+export function layoutText(font, text, { align = 'center', lineSpacing = 1, lineShifts = [], lineShiftsY = [] } = {}) {
   const lines = String(text).replace(/\r/g, '').split('\n');
   const lineHeight = NOMINAL * lineSpacing;
   const contours = [];
-  const widest = Math.max(1, ...lines.map((l) => (l.trim() ? font.getAdvanceWidth(l, NOMINAL) : 0)));
+  const widest = widestLine(font, text);
 
   lines.forEach((line, i) => {
     if (!line.trim()) return;
     const width = font.getAdvanceWidth(line, NOMINAL);
     const shift = ((Number(lineShifts[i]) || 0) / 100) * widest;
     const x0 = (align === 'left' ? 0 : align === 'right' ? -width : -width / 2) + shift;
-    const baseline = -i * lineHeight;
+    const baseline = -i * lineHeight + ((Number(lineShiftsY[i]) || 0) / 100) * NOMINAL;
     const path = font.getPath(line, x0, 0, NOMINAL);
 
     // opentype paths are y-down with the baseline at y = 0; flip to y-up.
@@ -46,7 +53,7 @@ export function layoutText(font, text, { align = 'center', lineSpacing = 1, line
     for (const c of path.commands) {
       if (c.type === 'M') {
         finish();
-        cur = { start: [X(c.x), Y(c.y)], segs: [] };
+        cur = { start: [X(c.x), Y(c.y)], segs: [], line: i };
       } else if (!cur) {
         continue;
       } else if (c.type === 'L') {

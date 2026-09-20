@@ -4,7 +4,10 @@ A static, in-browser web app that generates a three-color keychain and exports i
 **STEP** (preferred) or **STL** for multi-color 3D printing. Nothing is uploaded — it all
 runs in your browser.
 
-Part of Potts Print Shop. Styled to the Potts blueprint theme (Lemon Milk headings).
+Part of Potts Print Shop. Styled to the Potts Plays Games! style guide (`docs/STYLE_GUIDE.md` in that
+repo): the blueprint theme, Lemon Milk for headings and emphasis, translucent bordered cards, and theme
+colors only (no hardcoded colors below `:root` in `style.css`). Like the app's setup and score screens,
+this is a screen you work in, so it uses minor grid lines only. Warnings use the theme's danger color.
 
 ## What it makes
 
@@ -23,8 +26,9 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
 
 ## Controls
 
-- **Text** — multi-line (Enter starts a new line), alignment, line spacing, and a sideways
-  offset slider for each line.
+- **Text** — multi-line (Enter starts a new line), alignment, line spacing, and left/right and
+  up/down sliders for each line. In the Top view you can also drag a line of text directly; the
+  keychain re-fits to your size when you let go.
 - **Font** — the bundled fonts (see `fonts/fonts.json`), or **Upload font…** (TTF / OTF / WOFF)
   for the current session only.
 - **Size** — width and height in inches or mm. *Keep font proportions* fits the text inside the
@@ -46,18 +50,21 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
 
 ## QR code on the back
 
-A fourth body: a light QR plate (light modules plus a 2-module quiet zone) recessed flush into the
-underside of the base. The dark modules are simply the base material, so it scans as dark-on-light —
-keep the base color dark and the plate color light. Turn the keychain over like a page and it reads
-correctly (the pattern is mirrored in the model).
+A fourth body: just the code's modules, recessed flush into the underside of the base in a color that
+contrasts with it — light on a dark base, dark on a light base (picked automatically from the base
+color, or choose your own). No plate and no border: the base around the code is its quiet zone. Turn
+the keychain over like a page and it reads correctly (the pattern is mirrored in the model).
 
 - *Error correction* L / M / Q / H, *Size* (blank = the biggest square that fits), *Recess depth*
-  (default 0.6 mm, so the plate is the first layers on the bed).
+  (default 0.6 mm, so the modules are the first layers on the bed).
+- Light modules on a dark base are a negative image. iPhone Camera and most current Android scanners
+  read that, but a few older apps don't. *Nerd Shite* has a *plate* option that puts the code on a
+  light plate with a border, so it reads the usual way.
 - The panel shows the module size. Under 0.8 mm won't print reliably on a 0.4 mm nozzle, and the app
   warns you: shorten the text, use lower error correction, make the keychain bigger, or use the
   *Rectangle plate* base, which leaves far more room than a base that follows the letters.
 - Verified by decoding the rendered back view with an independent QR reader (URLs, Wi-Fi codes,
-  accented and emoji text, at all four error-correction levels).
+  accented and emoji text, at all four error-correction levels, plate and no plate).
 
 ## Exports
 

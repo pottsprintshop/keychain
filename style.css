@@ -30,6 +30,13 @@
   --grid-minor: rgba(255, 255, 255, 0.07);
   --grid-major: rgba(255, 255, 255, 0.15);
   --grid-spacing: 26px;
+
+  /* Derived from the theme colors above, so nothing below hardcodes a color. */
+  --on-success: color-mix(in srgb, var(--success) 25%, black); /* text on green buttons */
+  --on-accent: color-mix(in srgb, var(--bg-top) 70%, black); /* text on cyan buttons */
+  --field: color-mix(in srgb, var(--text) 92%, transparent); /* text inputs */
+  --on-field: color-mix(in srgb, var(--bg-top) 35%, black);
+  --surface: color-mix(in srgb, var(--bg-top) 94%, transparent); /* opaque-ish card, for the pinned preview */
 }
 
 * { box-sizing: border-box; }
@@ -46,9 +53,9 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   padding: 0 0 3rem;
   background-color: var(--bg-bottom);
+  /* Minor grid lines only: like the app's setup and score screens, this is a screen you work in, so the
+     grid shouldn't compete with the controls (the brighter every-4th "major" lines are for home screens). */
   background-image:
-    repeating-linear-gradient(to right, var(--grid-major) 0 1px, transparent 1px calc(var(--grid-spacing) * 4)),
-    repeating-linear-gradient(to bottom, var(--grid-major) 0 1px, transparent 1px calc(var(--grid-spacing) * 4)),
     repeating-linear-gradient(to right, var(--grid-minor) 0 1px, transparent 1px var(--grid-spacing)),
     repeating-linear-gradient(to bottom, var(--grid-minor) 0 1px, transparent 1px var(--grid-spacing)),
     linear-gradient(135deg, var(--bg-top), var(--bg-bottom));
@@ -104,7 +111,7 @@ main { max-width: 1080px; }
 @media (max-width: 899px) {
   /* Phone/tablet: keep the preview pinned while scrolling through the controls. */
   .preview-col { display: contents; }
-  .preview-box { order: -2; position: sticky; top: 0.5rem; z-index: 5; background: rgba(13, 41, 97, 0.94); }
+  .preview-box { order: -2; position: sticky; top: 0.5rem; z-index: 5; background: var(--surface); }
   .preview-col > .panel { order: 99; }
 }
 
@@ -121,7 +128,7 @@ main { max-width: 1080px; }
 
 button {
   background: var(--success);
-  color: #06331a;
+  color: var(--on-success);
   border: none;
   border-radius: 10px;
   padding: 0.7rem 1.1rem;
@@ -132,13 +139,13 @@ button {
   touch-action: manipulation;
 }
 button:disabled { opacity: 0.4; cursor: default; }
-button.secondary { background: var(--accent); color: #04283f; font-size: 0.8rem; padding: 0.5rem 0.8rem; }
+button.secondary { background: var(--accent); color: var(--on-accent); font-size: 0.8rem; padding: 0.5rem 0.8rem; }
 
 textarea, select, input[type="number"], input[type="text"] {
   font: inherit;
   font-size: 1rem;
-  color: #111;
-  background: rgba(255, 255, 255, 0.92);
+  color: var(--on-field);
+  background: var(--field);
   border: 1px solid var(--card-border);
   border-radius: 8px;
   padding: 0.45rem 0.55rem;
@@ -147,7 +154,7 @@ textarea, select, input[type="number"], input[type="text"] {
 textarea { width: 100%; resize: vertical; font-size: 1.05rem; }
 input[type="color"] {
   width: 100%; height: 2.2rem; padding: 0.1rem; border-radius: 8px;
-  border: 1px solid var(--card-border); background: rgba(255, 255, 255, 0.92); cursor: pointer;
+  border: 1px solid var(--card-border); background: var(--field); cursor: pointer;
 }
 input[type="range"] { flex: 1; accent-color: var(--accent); min-width: 0; }
 input[type="checkbox"] { accent-color: var(--accent); }
@@ -196,16 +203,17 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .preview-head h2 { margin: 0; }
 .view-buttons { display: flex; gap: 0.4rem; }
 .scale-btn {
-  background: rgba(255, 255, 255, 0.12); color: var(--text); border: 1px solid var(--card-border);
+  background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); border: 1px solid var(--card-border);
   border-radius: 8px; padding: 0.35rem 0.8rem; font-size: 0.75rem;
 }
-.scale-btn.active { background: var(--accent); color: #04283f; border-color: var(--accent); }
+.scale-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .preview-canvas {
   width: 100%;
   aspect-ratio: 5 / 3;
   border-radius: 10px;
   overflow: hidden;
-  background: radial-gradient(ellipse at 50% 40%, #3a4660, #1c2333);
+  /* the preview stage: the theme's own navy, so the black base and the colors read against it */
+  background: radial-gradient(ellipse at 50% 40%, var(--bg-bottom), var(--bg-top));
 }
 .preview-canvas canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .preview-box .hint { margin: 0.5rem 0 0; }
@@ -217,9 +225,11 @@ input[type="checkbox"] { accent-color: var(--accent); }
 
 .scale-buttons { display: flex; gap: 0.4rem; flex-wrap: wrap; flex: 1; }
 .scale-buttons .scale-btn { flex: 1 1 3.6rem; }
-.shift-row { margin-bottom: 0.5rem; flex-wrap: nowrap; }
-.shift-row label { min-width: 0; flex: 0 0 9.5rem; font-size: 0.85rem; }
-.shift-row em { font-style: normal; color: var(--text-dim); }
+.shift-block { margin-bottom: 0.7rem; }
+.shift-head { display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.3rem; }
+.shift-head em { font-style: normal; color: var(--text-dim); }
+.shift-row { margin-bottom: 0.25rem; flex-wrap: nowrap; }
+.shift-row label { min-width: 0; flex: 0 0 4.6rem; font-size: 0.85rem; }
 .shift-row span { color: var(--accent); font-variant-numeric: tabular-nums; }
 button.tiny { padding: 0.25rem 0.55rem; font-size: 0.9rem; line-height: 1; }
 [hidden] { display: none !important; }
@@ -227,3 +237,6 @@ button.tiny { padding: 0.25rem 0.55rem; font-size: 0.9rem; line-height: 1; }
 
 label.wide { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.7rem; }
 label.wide input { width: 100%; }
+
+/* Warnings and errors use the theme's danger color. */
+.warn { color: var(--danger); }

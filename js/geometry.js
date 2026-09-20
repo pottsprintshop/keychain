@@ -6,7 +6,7 @@
 // glyph curves are kept alongside for the STEP export.
 
 import '../vendor/clipper.js';
-import { layoutText, transformContours, flattenContour, bboxOfPolylines, NOMINAL } from './layout.js';
+import { layoutText, widestLine, transformContours, flattenContour, bboxOfPolylines, NOMINAL } from './layout.js';
 import { makeQr } from './qr.js';
 
 const CL = globalThis.ClipperLib;
@@ -41,9 +41,12 @@ export const DEFAULTS = {
   holeAngle: 180, // where around the keychain the hole sits, degrees: 0 = right, 90 = top, 180 = left (centered), 270 = bottom
   holePush: 0, // 0..1: how far the tab sticks out past its snug position
   lineShifts: [], // per-line sideways nudge, % of the widest line
+  lineShiftsY: [], // per-line vertical nudge, % of the font size
+  fixed: null, // while dragging a line: the previous build's `layout`, so nothing re-fits or re-centres
   qrEnabled: false, // a QR code on the back
   qrText: '',
   qrEcc: 'M', // error correction: L, M, Q or H
+  qrPlate: false, // false: just the code's modules, in a color that contrasts with the base; true: modules on a plate
   qrSize: 0, // side of the QR square in mm incl. its quiet zone; 0 = as big as fits
   qrDepth: 0.6, // how deep the QR plate is recessed into the base (mm)
 };
@@ -218,15 +221,16 @@ function rayHit(rings, cx, cy, dx, dy) {
 
 // Slide the hole to the requested angle around the text. `polylines` are the text
 // outlines (any frame). Returns { cx, cy, R, Rt, need }.
-export function placeHole(polylines, p, plate = null) {
+export function placeHole(polylines, p, plate = null, origin = null) {
   const h = holeMetrics(p);
   const bb = bboxOfPolylines(polylines);
+  const ox = origin ? origin[0] : bb.cx, oy = origin ? origin[1] : bb.cy; // the ray starts at the text's centre (frozen while dragging)
   const a = (p.holeAngle * Math.PI) / 180;
   const dx = Math.cos(a), dy = Math.sin(a);
   // For a rectangle base the hole slides along the plate's edge (far enough out to clear the
   // outline layer); otherwise along the text's outline.
   const rings = plate ? holeTrack([plate.ring], Math.max(0, h.need - plate.margin)) : holeTrack(polylines, h.need);
-  const hit = rayHit(rings, bb.cx, bb.cy, dx, dy);
+  const hit = rayHit(rings, ox, oy, dx, dy);
   let cx, cy;
   if (hit) {
     const len = Math.hypot(hit.ex, hit.ey) || 1;
@@ -234,10 +238,10 @@ export function placeHole(polylines, p, plate = null) {
     cx = hit.x + (-hit.ey / len) * push; // outward normal of a clockwise ring
     cy = hit.y + (hit.ex / len) * push;
   } else {
-    cx = bb.cx + dx * (bb.w / 2 + h.need);
-    cy = bb.cy + dy * (bb.h / 2 + h.need);
+    cx = ox + dx * (bb.w / 2 + h.need);
+    cy = oy + dy * (bb.h / 2 + h.need);
   }
-  return { cx, cy, R: h.R, Rt: h.Rt, need: h.need, track: { rings, cx: bb.cx, cy: bb.cy } };
+  return { cx, cy, R: h.R, Rt: h.Rt, need: h.need, track: { rings, cx: ox, cy: oy } };
 }
 
 // The angle (degrees) that puts the hole on the given side at `frac` of the way down
@@ -330,11 +334,37 @@ function layoutQr(qr, basePunchedPaths, cx, cy, p, warnings) {
     }
   }
   const plate = [[{ X: gx[0], Y: gy[cells] }, { X: gx[cells], Y: gy[cells] }, { X: gx[cells], Y: gy[0] }, { X: gx[0], Y: gy[0] }]];
-  // Shrink the dark modules a hair: two that touch only at a corner would make a pinched, invalid
-  // face. Both the light plate and the dark islands in the base use this same shape.
+  // Shrink the modules a hair: two that touch only at a corner would make a pinched, invalid face.
   const darkShrunk = allPaths(offsetTree(allPaths(unionTree(dark)), -QR_GAP, CL.JoinType.jtMiter));
-  const light = allPaths(runClipper(CL.ClipType.ctDifference, plate, darkShrunk));
+  // The QR body is just the code's modules, in a color that contrasts with the base: no plate, no border
+  // (the base around it is the quiet zone). On a dark base that's a light-on-dark (negative) code; on a
+  // light base it's the usual dark-on-light. With `qrPlate`, it's a plate with the modules left as base.
+  const light = p.qrPlate ? allPaths(runClipper(CL.ClipType.ctDifference, plate, darkShrunk)) : darkShrunk;
   return { light, side, module, cells, n: qr.n };
+}
+
+// Which line of text is under (x, y)? An exact hit on the letters wins; otherwise the nearest line
+// whose (slightly padded) box contains the point. Returns the line number or -1.
+export function pickLine(lines, x, y, pad = 1.5) {
+  const inside = (polylines) => {
+    let odd = false;
+    for (const pl of polylines) {
+      for (let i = 0, n = pl.length, j = n - 1; i < n; j = i++) {
+        const [xi, yi] = pl[i], [xj, yj] = pl[j];
+        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) odd = !odd;
+      }
+    }
+    return odd;
+  };
+  for (const l of lines) if (inside(l.ink)) return l.index;
+  let best = -1, bestD = Infinity;
+  for (const l of lines) {
+    const b = l.bbox;
+    if (x < b.x0 - pad || x > b.x1 + pad || y < b.y0 - pad || y > b.y1 + pad) continue;
+    const d = Math.abs(y - b.cy);
+    if (d < bestD) { bestD = d; best = l.index; }
+  }
+  return best;
 }
 
 // ---- Fit + build ------------------------------------------------------------
@@ -356,6 +386,7 @@ export function buildKeychain(font, params) {
   // Half-extents of the base body. A rectangle base fills the whole width x height you asked
   // for ("expanded"); while fitting, and for the text-shaped base, it just hugs the text.
   const halfBox = (sx, sy, expanded) => {
+    if (p.fixed) return { hw: p.fixed.hw, hh: p.fixed.hh };
     let hw = (ink.w * sx) / 2 + M, hh = (ink.h * sy) / 2 + M;
     if (expanded && plateMode && !p.sizeIncludesTab) {
       hw = Math.max(hw, p.width / 2);
@@ -393,9 +424,9 @@ export function buildKeychain(font, params) {
   };
 
   // Margins and the tab don't scale with the text, so iterate to a fixed point.
-  let [sx, sy] = solve(2 * M, 2 * M);
+  let [sx, sy] = p.fixed ? [p.fixed.sx, p.fixed.sy] : solve(2 * M, 2 * M);
   const MIN_SCALE = 0.01;
-  for (let it = 0; it < 8; it++) {
+  for (let it = 0; !p.fixed && it < 8; it++) {
     sx = Math.max(sx, MIN_SCALE);
     sy = Math.max(sy, MIN_SCALE);
     // The tab only matters for sizing when the size is meant to include it.
@@ -418,11 +449,14 @@ export function buildKeychain(font, params) {
   }
 
   // Final placement with the fine-flattened outlines.
-  const centered = transformContours(raw, sx, sy, -ink.cx * sx, -ink.cy * sy);
+  const centered = p.fixed
+    ? transformContours(raw, sx, sy, p.fixed.tx - p.fixed.shx, p.fixed.ty - p.fixed.shy)
+    : transformContours(raw, sx, sy, -ink.cx * sx, -ink.cy * sy);
   let fine = centered.map((c) => flattenContour(c, FLATTEN_TOL));
-  let hole = p.holeEnabled ? placeHole(fine, p, plateFor(sx, sy, true)) : null;
+  let hole = p.holeEnabled ? placeHole(fine, p, plateFor(sx, sy, true), p.fixed ? [0, 0] : null) : null;
   const ref = sizing(sx, sy, hole, true);
-  const shx = -(ref.x0 + ref.x1) / 2, shy = -(ref.y0 + ref.y1) / 2;
+  const shx = p.fixed ? p.fixed.shx : -(ref.x0 + ref.x1) / 2;
+  const shy = p.fixed ? p.fixed.shy : -(ref.y0 + ref.y1) / 2;
   const b = overall(sx, sy, hole, true);
 
   const contours = transformContours(centered, 1, 1, shx, shy);
@@ -461,6 +495,10 @@ export function buildKeychain(font, params) {
   // basePlain has the tab but no hole (the STEP export bores an exact hole);
   // basePolys has the hole cut as a polygon, for the preview and STL.
   const basePlain = simplifyPolys(treeToPolys(unionTree(basePaths)));
+  // Lines dragged far apart leave a base in separate pieces; say so, since it would print as separate parts.
+  if (!plateMode && basePlain.length > 1) {
+    warnings.push(`The base is in ${basePlain.length} separate pieces — move the text closer together so it prints as one keychain.`);
+  }
   let basePolys = basePlain;
   let basePunchedPaths = basePaths;
   if (hole) {
@@ -493,15 +531,29 @@ export function buildKeychain(font, params) {
           { key: 'base', name: 'Base', polys: basePolys, z0: depth, z1 },
         ];
         qrLayer = { key: 'qr', name: 'QR code', polys: lightPolys, z0: 0, z1: depth };
-        qr = { n: laid.n, cells: laid.cells, module: laid.module, side: laid.side, depth, ecc: p.qrEcc, cx: shx, cy: shy };
+        qr = { n: laid.n, cells: laid.cells, module: laid.module, side: laid.side, depth, ecc: p.qrEcc, plate: p.qrPlate, cx: shx, cy: shy };
       }
     } catch (err) {
       warnings.push(`Can't make that QR code: ${err.message || err}. Try shorter text or lower error correction.`);
     }
   }
 
+  // Per-line ink (final frame) for picking a line under the pointer, and the numbers a drag needs
+  // to turn millimetres back into slider units.
+  const inkByLine = new Map();
+  fine.forEach((pl, i) => {
+    const k = raw[i].line;
+    if (!inkByLine.has(k)) inkByLine.set(k, []);
+    inkByLine.get(k).push(pl);
+  });
+  const lines = [...inkByLine].map(([index, inkLines]) => ({ index, ink: inkLines, bbox: bboxOfPolylines(inkLines) }));
+  const half = halfBox(sx, sy, true);
+  const layout = p.fixed || { sx, sy, tx: -ink.cx * sx + shx, ty: -ink.cy * sy + shy, shx, shy, hw: half.hw, hh: half.hh, widest: widestLine(font, p.text) };
+
   return {
     params: p,
+    lines,
+    layout,
     size: { w: width, h: height, d: z3 },
     scale: { x: sx, y: sy },
     layers: [

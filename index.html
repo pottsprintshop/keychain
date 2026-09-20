@@ -49,6 +49,56 @@
     </section>
 
     <section class="panel">
+      <h2>Artwork</h2>
+      <div class="control-row">
+        <button type="button" id="artBtn" class="secondary">Choose image&hellip;</button>
+        <input type="file" id="artFile" accept="image/*,.svg" hidden data-static>
+        <span id="artName" class="hint">PNG, JPG or SVG &mdash; traced to an outline, like img2cad.</span>
+        <button type="button" id="artClear" class="secondary" hidden>Remove</button>
+      </div>
+      <div id="artControls" hidden>
+        <canvas id="artPreview" class="art-preview" width="320" height="200" aria-label="Traced artwork"></canvas>
+        <div class="fields">
+          <label class="grow">Put it
+            <select id="artMode">
+              <option value="above" selected>Above the text</option>
+              <option value="below">Below the text</option>
+              <option value="only">Instead of the text</option>
+              <option value="off">Nowhere on the front</option>
+            </select>
+          </label>
+          <label>Height (lines) <input type="number" id="artLines" min="0.2" step="0.1"></label>
+        </div>
+        <div class="slider-row">
+          <label for="artThreshold">Threshold</label>
+          <span class="val"><input type="number" class="numval" id="artThresholdNum" min="0" max="255" step="1" aria-label="Threshold value"></span>
+          <input type="range" id="artThreshold" min="0" max="255" step="any" value="128" data-static>
+        </div>
+        <div class="slider-row">
+          <label for="artDetail">Detail</label>
+          <span class="val"><input type="number" class="numval" id="artDetailNum" min="0" max="10" step="1" aria-label="Detail value"></span>
+          <input type="range" id="artDetail" min="0" max="10" step="any" value="7" data-static>
+        </div>
+        <div class="control-row checkbox-row">
+          <label><input type="checkbox" id="artInvert" data-static> Trace the light areas (invert)</label>
+          <label><input type="checkbox" id="artDenoise" data-static> Reduce noise</label>
+        </div>
+        <div class="slider-row">
+          <label for="artShiftX">Left / right</label>
+          <span class="val"><input type="number" class="numval" id="artShiftXNum" min="-100" max="100" step="1" aria-label="Artwork left or right"><span class="unit">%</span></span>
+          <input type="range" id="artShiftX" min="-100" max="100" step="any" value="0">
+        </div>
+        <div class="slider-row">
+          <label for="artShiftY">Up / down</label>
+          <span class="val"><input type="number" class="numval" id="artShiftYNum" min="-100" max="100" step="1" aria-label="Artwork up or down"><span class="unit">%</span></span>
+          <input type="range" id="artShiftY" min="-100" max="100" step="any" value="0">
+        </div>
+        <p class="hint" id="artInfo"></p>
+      </div>
+      <p class="hint">Artwork stays in your browser, so it can&rsquo;t be part of a shared link. Use it on the back too (Back &rarr; The artwork).</p>
+    </section>
+
+    <section class="panel">
       <h2>Size</h2>
       <div class="fields">
         <label>Width <input type="number" id="width" min="1" step="0.1"></label>

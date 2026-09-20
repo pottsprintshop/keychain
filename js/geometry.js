@@ -11,6 +11,7 @@ import {
 } from './clip.js';
 import { layoutText, widestLine, transformContours, flattenContour, bboxOfPolylines, NOMINAL } from './layout.js';
 import { layoutBack } from './back.js';
+import { placeArt } from './art.js';
 
 const FLATTEN_TOL = 0.01; // mm, glyph curve flattening for the final polygons
 const FIT_TOL = 0.05; // nominal units, coarse flattening used only while fitting
@@ -58,6 +59,10 @@ export const DEFAULTS = {
   qrEcc: 'M', // error correction: L, M, Q or H
   qrPlate: false, // false: just the code's modules, in a color that contrasts with the base; true: modules on a plate
   art: null, // traced artwork ({ contours, aspect }), see art.js
+  artMode: 'off', // on the front: 'off' | 'above' the text | 'below' it | 'only' (instead of the text)
+  artLines: 2, // artwork height, in font sizes
+  artShiftX: 0, // nudge, % of the font size
+  artShiftY: 0,
 };
 
 // ---- Key hole placement -----------------------------------------------------
@@ -187,7 +192,9 @@ export function pickLine(lines, x, y, pad = 1.5) {
 
 export function buildKeychain(font, params) {
   const p = { ...DEFAULTS, ...params };
-  const raw = layoutText(font, p.text, p);
+  // The front: the text, and/or the artwork placed above, below or instead of it.
+  let raw = p.art && p.artMode === 'only' ? [] : layoutText(font, p.text, p);
+  if (p.art && p.artMode !== 'off') raw = raw.concat(placeArt(p.art, raw, p));
   if (!raw.length) return null;
 
   const warnings = [];
@@ -289,7 +296,19 @@ export function buildKeychain(font, params) {
   }
 
   // Layer outlines.
-  const inkTree = unionTree(fine.map(toPath));
+  // Glyphs union by winding; traced artwork by even-odd (its outlines have no reliable direction).
+  const isArt = raw.map((c) => c.line === -1);
+  let inkTree;
+  if (isArt.some(Boolean)) {
+    const parts = [];
+    const textPaths = fine.filter((_, i) => !isArt[i]).map(toPath);
+    const artPaths = fine.filter((_, i) => isArt[i]).map(toPath);
+    if (textPaths.length) parts.push(...allPaths(unionTree(textPaths)));
+    if (artPaths.length) parts.push(...allPaths(unionTree(artPaths, CL.PolyFillType.pftEvenOdd)));
+    inkTree = unionTree(parts);
+  } else {
+    inkTree = unionTree(fine.map(toPath));
+  }
   const inkPaths = allPaths(inkTree);
   const textPolys = treeToPolys(inkTree);
   // The outline rings stay pure offsets of the text; only the base gets fillets.
@@ -374,7 +393,7 @@ export function buildKeychain(font, params) {
     if (!inkByLine.has(k)) inkByLine.set(k, []);
     inkByLine.get(k).push(pl);
   });
-  const lines = [...inkByLine].map(([index, inkLines]) => ({ index, ink: inkLines, bbox: bboxOfPolylines(inkLines) }));
+  const lines = [...inkByLine].filter(([index]) => index >= 0).map(([index, inkLines]) => ({ index, ink: inkLines, bbox: bboxOfPolylines(inkLines) })); // (artwork isn't draggable)
   const half = halfBox(sx, sy, true);
   const layout = p.fixed || { sx, sy, tx: -ink.cx * sx + shx, ty: -ink.cy * sy + shy, shx, shy, hw: half.hw, hh: half.hh, widest: widestLine(font, p.text) };
 

@@ -246,3 +246,5 @@ label.wide input { width: 100%; }
 .val input.numval::-webkit-outer-spin-button, .val input.numval::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .val input.numval:hover { border-color: var(--card-border); }
 .val input.numval:focus { outline: none; border-color: var(--accent); background: var(--field); color: var(--on-field); }
+
+.art-preview { display: block; width: 100%; max-width: 20rem; aspect-ratio: 8 / 5; margin: 0 0 0.7rem; border-radius: 10px; border: 1px solid var(--card-border); background: var(--surface); }

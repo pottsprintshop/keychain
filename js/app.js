@@ -3,6 +3,7 @@ import { buildKeychain, angleForHeight, pickLine, DEFAULTS } from './geometry.js
 import { createPreview } from './preview.js';
 import { zipStore, downloadBlob, slug } from './exporters.js';
 import { stlFilesFromModel } from './mesh.js';
+import { loadArtSource, traceArt, drawArtPreview } from './art.js';
 
 const $ = (id) => document.getElementById(id);
 const MM_PER_IN = 25.4;
@@ -20,6 +21,9 @@ let lineShiftsY = []; // vertical nudge per text line (percent of the font size)
 const shiftUi = new Map(); // line number -> { rx, ry, show() }, so a drag can move the sliders
 let dragBase = null; // while dragging a line: the layout to hold still, and where the line started
 let dragQueued = false;
+let artSource = null; // the loaded image
+let art = null; // its traced outlines (see art.js)
+let artTimer = null;
 const SHIFT_X_MAX = 100, SHIFT_Y_MAX = 150;
 
 // ---- Reading the form --------------------------------------------------------
@@ -70,7 +74,11 @@ function readParams() {
     qrText: el.qrText.value,
     qrEcc: el.qrEcc.value,
     qrPlate: el.qrPlate.checked,
-    art: null,
+    art,
+    artMode: el.artMode.value,
+    artLines: num(el.artLines, DEFAULTS.artLines, 0.1),
+    artShiftX: num(el.artShiftX, 0, -1000),
+    artShiftY: num(el.artShiftY, 0, -1000),
   };
 }
 
@@ -337,6 +345,71 @@ for (const b of el.holeHeights.children) {
   });
 }
 
+// ---- Artwork ---------------------------------------------------------------------
+
+function retraceSoon() {
+  clearTimeout(artTimer);
+  artTimer = setTimeout(retrace, 150);
+}
+
+async function retrace() {
+  if (!artSource) return;
+  try {
+    art = await traceArt(artSource, {
+      threshold: Number(el.artThreshold.value),
+      detail: Number(el.artDetail.value),
+      invert: el.artInvert.checked,
+      denoise: el.artDenoise.checked,
+    });
+    drawArtPreview(el.artPreview, art);
+    el.artInfo.textContent = art
+      ? `${art.contours.length} ${art.contours.length === 1 ? 'shape' : 'shapes'} traced. If it looks wrong, move Threshold, or trace the light areas.`
+      : 'Nothing traced. Move Threshold, or trace the light areas.';
+    el.artInfo.classList.toggle('warn', !art);
+  } catch (err) {
+    console.error(err);
+    art = null;
+    el.artInfo.textContent = 'Could not trace that image: ' + err.message;
+    el.artInfo.classList.add('warn');
+  }
+  schedule();
+}
+
+function clearArt() {
+  artSource = null;
+  art = null;
+  el.artFile.value = '';
+  el.artControls.hidden = true;
+  el.artClear.hidden = true;
+  el.artName.textContent = 'PNG, JPG or SVG — traced to an outline, like img2cad.';
+  schedule();
+}
+
+function initArt() {
+  el.artBtn.addEventListener('click', () => el.artFile.click());
+  el.artClear.addEventListener('click', clearArt);
+  el.artFile.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      artSource = await loadArtSource(file);
+    } catch (err) {
+      el.artName.textContent = err.message;
+      return;
+    }
+    el.artName.textContent = file.name;
+    el.artControls.hidden = false;
+    el.artClear.hidden = false;
+    if (el.artMode.value === 'off') el.artMode.value = 'above';
+    retrace();
+  });
+  for (const id of ['artThreshold', 'artDetail']) el[id].addEventListener('input', retraceSoon);
+  for (const id of ['artInvert', 'artDenoise']) el[id].addEventListener('input', retraceSoon);
+  for (const [range, box] of [['artThreshold', 'artThresholdNum'], ['artDetail', 'artDetailNum'], ['artShiftX', 'artShiftXNum'], ['artShiftY', 'artShiftYNum']]) {
+    sliderBoxes.push(pairSliderAndBox(el[range], el[box], 0));
+  }
+}
+
 // ---- Fonts -----------------------------------------------------------------------
 
 function addFontOption(value, label, font) {
@@ -444,7 +517,7 @@ function initForm() {
   el.width.value = +(DEFAULTS.width / k).toFixed(3);
   el.height.value = +(DEFAULTS.height / k).toFixed(3);
   el.width.step = el.height.step = '0.05';
-  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'backDepth', 'backMargin', 'plateRadius', 'ring2W', 'ring2H', 'ring3W', 'ring3H']) {
+  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'backDepth', 'backMargin', 'plateRadius', 'ring2W', 'ring2H', 'ring3W', 'ring3H', 'artLines']) {
     el[key].value = DEFAULTS[key];
   }
   el.holeAngle.value = DEFAULTS.holeAngle;
@@ -484,6 +557,7 @@ async function init() {
   el.format.addEventListener('change', updateDownloadLabel);
   el.downloadBtn.addEventListener('click', download);
   sliderBoxes.push(pairSliderAndBox(el.lineSpacing, el.lineSpacingNum, 2), pairSliderAndBox(el.holeAngle, el.holeAngleNum, 0), pairSliderAndBox(el.holePush, el.holePushNum, 0));
+  initArt();
   updateDownloadLabel();
   renderLineShifts();
   rebuild();

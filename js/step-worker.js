@@ -136,6 +136,40 @@ function glyphSolids(contours, z0, z1) {
   return drawing.sketchOnPlane('XY', z0).extrude(z1 - z0);
 }
 
+// The text as exact glyph curves, or plain polygon prisms if the curves don't check out (valid solid, volume within 3%
+// of the polygons'). Lines that overlap each other (dragged together) can't share one drawing, since which contour is
+// a hole of which would be ambiguous: each line is built alone and they are fused into one solid.
+function exactText(contours, overlapping, z0, z1, expected, report) {
+  const good = (shape) => isValid(shape) && volumeOk(shape, expected, 0.03);
+  try {
+    if (!overlapping) {
+      const all = glyphSolids(contours, z0, z1);
+      if (good(all)) return all;
+    }
+    const lines = new Map();
+    for (const c of contours) {
+      const key = c.line ?? 0;
+      if (!lines.has(key)) lines.set(key, []);
+      lines.get(key).push(c);
+    }
+    if (lines.size > 1) {
+      let fused = null;
+      for (const group of lines.values()) {
+        const part = glyphSolids(group, z0, z1);
+        fused = fused ? fused.fuse(part) : part;
+      }
+      if (good(fused)) {
+        report.textFused = true;
+        return fused;
+      }
+    }
+  } catch (e) {
+    console.warn('Exact text failed, using polygons:', e);
+  }
+  report.text = 'polygon';
+  return null;
+}
+
 // ---- writing ------------------------------------------------------------------
 
 // The same writer replicad's exportSTEP uses, minus the "pcurves": otherwise every edge carries a 2D copy of its
@@ -174,17 +208,8 @@ function build(model, colors, progress) {
   const { contours, basePlain, hole } = model.exact;
 
   progress('Building the text…');
-  let textShape = null;
-  try {
-    const candidate = glyphSolids(contours, text.z0, text.z1);
-    if (isValid(candidate) && volumeOk(candidate, netArea(text.polys) * (text.z1 - text.z0), 0.03)) textShape = candidate;
-  } catch (e) {
-    console.warn('Exact text failed, using polygons:', e);
-  }
-  if (!textShape) {
-    report.text = 'polygon';
-    textShape = prisms(text.polys, text.z0, text.z1);
-  }
+  const textShape = exactText(contours, model.exact.textOverlap, text.z0, text.z1, netArea(text.polys) * (text.z1 - text.z0), report)
+    || prisms(text.polys, text.z0, text.z1);
 
   // How much the arc fitting saved: polygon vertices in, edges out (an edge is a line or a whole arc).
   const tally = { points: 0, segments: 0 };

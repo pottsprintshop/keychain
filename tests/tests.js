@@ -330,6 +330,13 @@ test('print check: estimates add up, thin details are found, settings are checke
   assert(/Outline is only/.test(odd) && /key hole/.test(odd) && /multiple/.test(odd), 'settings warnings: ' + odd);
 });
 
+test('overlapping lines are detected only when they really overlap', () => {
+  const f = font(/Carter/);
+  assert(build(f).exact.textOverlap === false, 'the default text does not overlap itself');
+  assert(build(f, { lineShiftsY: [0, 35] }).exact.textOverlap === true, 'lines dragged together overlap');
+  assert(build(f, { lineShifts: [-20, 20] }).exact.textOverlap === false, 'lines slid sideways past each other do not');
+});
+
 test('arc fitting: circles and rounded corners become arcs, corners stay lines, the shape holds', () => {
   const dev = (ring, fitted) => Math.max(...ring.map(([x, y]) => distToRings(x, y, [fitted])));
   const circle = circlePoints(5, -3, 6, 0.01);
@@ -381,9 +388,9 @@ async function stepCheck(m, label, { maxMB, arcs = true, exactText = false } = {
   if (maxMB) assert(mb <= maxMB, `${label}: ${mb.toFixed(1)} MB is over the ${maxMB} MB budget`);
   return `${label}: ${mb.toFixed(1)} MB, ${res.report.edges.points} points -> ${res.report.edges.segments} edges`;
 }
-test('STEP: default plate with a QR code', () => stepCheck(build(font(/Carter/), { baseShape: 'plate', backKind: 'qr', qrText: URL_MED }), 'plate+QR', { maxMB: 8 }), { step: true });
+test('STEP: default plate with a QR code', () => stepCheck(build(font(/Carter/), { baseShape: 'plate', backKind: 'qr', qrText: URL_MED }), 'plate+QR', { maxMB: 8, exactText: true }), { step: true });
 test('STEP: text-shaped base, 3 rings, back text', () => stepCheck(build(font(/Graffiti/), { text: 'WHOOP\nWHOOP!!', rings: 3, backKind: 'text', backText: 'If found call\n303-555-0100' }), 'graffiti', { maxMB: 12 }), { step: true });
-test('STEP: lines dragged together (overlapping glyphs)', () => stepCheck(build(font(/Carter/), { lineShiftsY: [0, 35] }), 'overlap', { maxMB: 4 }), { step: true });
+test('STEP: lines dragged together (overlapping glyphs) keep exact text', () => stepCheck(build(font(/Carter/), { lineShiftsY: [0, 35] }), 'overlap', { maxMB: 4, exactText: true }), { step: true });
 
 // ---- runner ----------------------------------------------------------------------------------------
 

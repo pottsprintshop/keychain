@@ -118,9 +118,13 @@ thin spots** paints them red in the preview. Print time isn't estimated.
 ## Exports
 
 - **STEP** — bodies named *Base*, *Outline* (each ring), *Text* (and the back) with their colors. The letters are
-  true curves and the key hole is an exact cylinder. The outline and base are polygons
-  (0.015 mm tolerance), so files run a few MB. The export runs in a Web Worker and loads the CAD
-  engine (23 MB raw, about 7 MB gzipped, then cached by the browser) only when you click Download.
+  true curves (even when lines of text overlap: each line is built alone and they are fused) and the key
+  hole is an exact cylinder. The outline, base and back start as polygons (0.015 mm tolerance); runs of
+  facets that sit on a circle are rebuilt as single arcs, and the file leaves out the redundant 2D
+  surface-curve records, so a typical file is 2–5 MB instead of 10–25 MB. Every arc/exact build is checked
+  (valid solid, volume within 1.5%) and falls back to plain polygons if it isn't. The export runs in a Web
+  Worker and loads the CAD engine (23 MB raw, about 7 MB gzipped, then cached by the browser) only when you
+  click Download.
 - **STL (zipped)** — one watertight STL per body, in mm, ready to import as parts. With something recessed
   into the back, the base is one closed shell.
 
@@ -152,6 +156,7 @@ js/mesh.js                layer meshes and STL packaging
 js/preview.js             three.js preview
 js/exporters.js           binary STL, zip, download
 js/step.js, step-worker.js  STEP export (OpenCascade via replicad) in a Web Worker
+js/arcs.js                arc fitting for the STEP outlines (pure geometry, no CAD engine)
 fonts/                    bundled fonts + fonts.json manifest
 vendor/                   third-party libraries (see vendor/README.md)
 ```

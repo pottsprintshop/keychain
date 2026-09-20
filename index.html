@@ -67,15 +67,17 @@
           </label>
           <label>Height (lines) <input type="number" id="artLines" min="0.2" step="0.1"></label>
         </div>
-        <div class="slider-row">
-          <label for="artThreshold">Threshold</label>
-          <span class="val"><input type="number" class="numval" id="artThresholdNum" min="0" max="255" step="1" aria-label="Threshold value"></span>
-          <input type="range" id="artThreshold" min="0" max="255" step="any" value="128" data-static>
-        </div>
-        <div class="slider-row">
-          <label for="artDetail">Detail</label>
-          <span class="val"><input type="number" class="numval" id="artDetailNum" min="0" max="10" step="1" aria-label="Detail value"></span>
-          <input type="range" id="artDetail" min="0" max="10" step="any" value="7" data-static>
+        <div class="slider-pair">
+          <div class="slider-row">
+            <label for="artThreshold">Threshold</label>
+            <span class="val"><input type="number" class="numval" id="artThresholdNum" min="0" max="255" step="1" aria-label="Threshold value"></span>
+            <input type="range" id="artThreshold" min="0" max="255" step="any" value="128" data-static>
+          </div>
+          <div class="slider-row">
+            <label for="artDetail">Detail</label>
+            <span class="val"><input type="number" class="numval" id="artDetailNum" min="0" max="10" step="1" aria-label="Detail value"></span>
+            <input type="range" id="artDetail" min="0" max="10" step="any" value="7" data-static>
+          </div>
         </div>
         <div class="control-row checkbox-row">
           <label><input type="checkbox" id="artInvert" data-static> Trace the light areas (invert)</label>
@@ -100,15 +102,15 @@
 
     <section class="panel">
       <h2>Layers</h2>
-      <p class="hint">Stacked bodies, so a slicer can give each one its own color.</p>
       <div class="fields">
-        <label>Outline rings
+        <label class="narrow">Outline rings
           <select id="rings">
             <option value="1" selected>1</option>
             <option value="2">2</option>
             <option value="3">3</option>
           </select>
         </label>
+        <p class="hint fields-hint">Stacked bodies, so a slicer can give each one its own color.</p>
       </div>
       <div class="layer-grid">
         <span class="lg-head"></span>
@@ -142,32 +144,17 @@
         <input type="number" id="baseMargin" min="0" step="0.1" aria-label="Base margin">
       </div>
       <div class="fields">
-        <label>Base shape
-          <select id="baseShape">
-            <option value="text" selected>Follow the text</option>
-            <option value="plate">Rectangle plate</option>
-            <option value="round">Round / oval</option>
-            <option value="hex">Hexagon</option>
-            <option value="dogbone">Dog bone</option>
-          </select>
-        </label>
-        <label id="plateRadiusWrap" hidden>Corner radius (mm) <input type="number" id="plateRadius" min="0" step="0.5"></label>
-        <label id="boneShaftWrap" hidden>Shaft thickness (% of height) <input type="number" id="boneShaft" min="20" max="95" step="5"></label>
-      </div>
-      <div class="control-row checkbox-row">
-        <label><input type="checkbox" id="fillGaps" checked> Solid base (fill gaps between letters)</label>
-      </div>
-      <div class="fields">
         <label>Blend inside corners (mm) <input type="number" id="roundIn" min="0" step="0.1"></label>
         <label>Round outside corners (mm) <input type="number" id="roundOut" min="0" step="0.1"></label>
+        <label class="check" title="Fill the gaps between letters, so the base is one solid silhouette"><input type="checkbox" id="fillGaps" checked> Solid base</label>
       </div>
       <p class="hint">Fillets on the base, including where the key hole tab joins the body. The outline and text keep their exact shapes.</p>
     </section>
 
     <section class="panel">
-      <h2>Key hole</h2>
-      <div class="control-row checkbox-row">
-        <label><input type="checkbox" id="holeEnabled" checked> Add a key hole</label>
+      <div class="panel-head">
+        <h2>Key hole</h2>
+        <label class="check-inline"><input type="checkbox" id="holeEnabled" checked> Add a key hole</label>
       </div>
       <div id="holeControls">
         <div class="fields">
@@ -184,11 +171,6 @@
             <button type="button" class="scale-btn" data-angle="270">Bottom</button>
           </div>
         </div>
-        <div class="slider-row">
-          <label for="holeAngle">Around the edge</label>
-          <span class="val"><input type="number" class="numval" id="holeAngleNum" min="0" max="360" step="1" aria-label="Angle around the edge in degrees"><span class="unit" id="holeAngleUnit"></span></span>
-          <input type="range" id="holeAngle" min="0" max="360" step="any" value="180">
-        </div>
         <div class="control-row">
           <label>Height <span class="dim">from the top</span></label>
           <div class="scale-buttons" id="holeHeights">
@@ -197,10 +179,17 @@
             <button type="button" class="scale-btn" data-h="80">80%</button>
           </div>
         </div>
-        <div class="slider-row">
-          <label for="holePush">Sticks out</label>
-          <span class="val"><input type="number" class="numval" id="holePushNum" min="0" max="100" step="1" aria-label="How far it sticks out, percent"><span class="unit">%</span></span>
-          <input type="range" id="holePush" min="0" max="100" step="any" value="0">
+        <div class="slider-pair">
+          <div class="slider-row">
+            <label for="holeAngle">Around the edge</label>
+            <span class="val"><input type="number" class="numval" id="holeAngleNum" min="0" max="360" step="1" aria-label="Angle around the edge in degrees"><span class="unit" id="holeAngleUnit"></span></span>
+            <input type="range" id="holeAngle" min="0" max="360" step="any" value="180">
+          </div>
+          <div class="slider-row">
+            <label for="holePush">Sticks out</label>
+            <span class="val"><input type="number" class="numval" id="holePushNum" min="0" max="100" step="1" aria-label="How far it sticks out, percent"><span class="unit">%</span></span>
+            <input type="range" id="holePush" min="0" max="100" step="any" value="0">
+          </div>
         </div>
       </div>
     </section>
@@ -216,22 +205,20 @@
             <option value="art">The artwork</option>
           </select>
         </label>
+        <label id="qrEccWrap" hidden>Error correction
+          <select id="qrEcc">
+            <option value="L">L &mdash; smallest code</option>
+            <option value="M" selected>M &mdash; balanced</option>
+            <option value="Q">Q &mdash; sturdier</option>
+            <option value="H">H &mdash; sturdiest</option>
+          </select>
+        </label>
       </div>
       <div id="backControls">
         <div id="backQrWrap">
           <label class="wide">What should it say?
             <input type="text" id="qrText" placeholder="https://example.com" autocomplete="off" spellcheck="false">
           </label>
-          <div class="fields">
-            <label>Error correction
-              <select id="qrEcc">
-                <option value="L">L &mdash; smallest code</option>
-                <option value="M" selected>M &mdash; balanced</option>
-                <option value="Q">Q &mdash; sturdier</option>
-                <option value="H">H &mdash; sturdiest</option>
-              </select>
-            </label>
-          </div>
           <div class="control-row checkbox-row">
             <label><input type="checkbox" id="qrPlate"> Put the code on a plate with a border</label>
           </div>
@@ -242,16 +229,16 @@
           </label>
         </div>
         <p class="hint" id="backArtNote">Uses the artwork from the Artwork panel.</p>
-        <div class="fields">
+        <div class="fields compact">
           <label>Edge margin (mm) <input type="number" id="backMargin" min="0" step="0.1"></label>
-          <label>Size (mm) <input type="number" id="backSize" min="5" step="0.5" placeholder="biggest that fits"></label>
+          <label title="Leave blank for the biggest that fits">Size (mm) <input type="number" id="backSize" min="5" step="0.5" placeholder="auto"></label>
           <label>Recess depth (mm) <input type="number" id="backDepth" min="0.2" step="0.1"></label>
           <label>Color <input type="color" id="colorBack" value="#f2f2f2" aria-label="Back color"></label>
         </div>
         <div class="control-row checkbox-row">
           <label><input type="checkbox" id="backAuto" checked> Contrast with the base color automatically</label>
         </div>
-        <p class="hint" id="backInfo">Recessed flush into the underside of the base, in a color that contrasts with it: light on a dark base, dark on a light base. Turn the keychain over like a page and it reads correctly. A plate base (Rectangle, Round, Hexagon, under Layers) leaves room for a bigger back. Light-on-dark is a negative image: iPhone Camera and most current Android scanners read a QR code that way, but a few older apps only read dark-on-light; the plate option adds a light square with a border so it reads the usual way.</p>
+        <p class="hint" id="backInfo">Recessed flush into the underside of the base, in a color that contrasts with it: light on a dark base, dark on a light base. Turn the keychain over like a page and it reads correctly. A plate base (Base shape, above the preview: Rectangle, Round, Hexagon) leaves room for a bigger back. Light-on-dark is a negative image: iPhone Camera and most current Android scanners read a QR code that way, but a few older apps only read dark-on-light; the plate option adds a light square with a border so it reads the usual way.</p>
       </div>
     </section>
 
@@ -263,12 +250,12 @@
       <div class="control-row checkbox-row">
         <label><input type="checkbox" id="showThin" data-static> Show thin spots and gaps in the preview (in red)</label>
       </div>
-      <div class="fields">
-        <label>Filament density (g/cm&sup3;) <input type="number" id="printDensity" min="0.5" step="0.01" data-static></label>
-        <label>Cost ($/kg) <input type="number" id="printCost" min="0" step="0.5" data-static></label>
-        <label>Waste allowance (%) <input type="number" id="printWaste" min="0" step="1" data-static></label>
-        <label>Layer height (mm) <input type="number" id="printLayer" min="0" step="0.02" data-static></label>
-        <label>Thinnest detail (mm) <input type="number" id="printMin" min="0" step="0.05" data-static></label>
+      <div class="fields compact">
+        <label title="Filament density, g/cm&sup3;">Density (g/cm&sup3;) <input type="number" id="printDensity" min="0.5" step="0.01" data-static></label>
+        <label title="Filament cost, dollars per kilogram">Cost ($/kg) <input type="number" id="printCost" min="0" step="0.5" data-static></label>
+        <label title="Waste allowance: extra filament for purging and supports, percent">Waste (%) <input type="number" id="printWaste" min="0" step="1" data-static></label>
+        <label title="Layer height, mm">Layer (mm) <input type="number" id="printLayer" min="0" step="0.02" data-static></label>
+        <label title="Thinnest detail your nozzle can print, mm">Thinnest (mm) <input type="number" id="printMin" min="0" step="0.05" data-static></label>
       </div>
       <p class="hint">Grams come from the model's volume (PLA density by default); print time isn't estimated. These settings are saved in this browser.</p>
     </section>
@@ -276,7 +263,7 @@
     <section class="panel">
       <h2>Batch</h2>
       <p class="hint">Make many keychains at once with the design above. One per line; <strong>|</strong> is a line break; a tab or comma, then the QR (or back) text.</p>
-      <textarea id="batchList" rows="5" spellcheck="false" placeholder="Erich|Deutsch&#10;Colleen|Deutsch,https://example.com/colleen&#10;Grandma" data-static data-noshare></textarea>
+      <textarea id="batchList" rows="5" spellcheck="false" placeholder="Erich|Lizzie|Potts|Butters" data-static data-noshare></textarea>
       <div class="control-row">
         <button type="button" id="batchLoad" class="secondary">Load a CSV&hellip;</button>
         <input type="file" id="batchFile" accept=".csv,.txt,text/csv,text/plain" hidden data-static data-noshare>
@@ -285,16 +272,14 @@
       <div class="fields">
         <label class="grow">Make
           <select id="batchFormat" data-static data-noshare>
-            <option value="stl" selected>STL, a folder of files for each keychain</option>
-            <option value="step">STEP (about 10 seconds each)</option>
-            <option value="dxf">DXF for the laser, one file each</option>
-            <option value="svg">SVG for the laser, one file each</option>
+            <option value="stl" selected>STL &mdash; a folder per keychain</option>
+            <option value="step">STEP &mdash; about 10 s each</option>
+            <option value="dxf">DXF &mdash; laser, one file each</option>
+            <option value="svg">SVG &mdash; laser, one file each</option>
           </select>
         </label>
-      </div>
-      <div class="control-row">
-        <button type="button" id="batchRun" disabled>Make them all</button>
-        <button type="button" id="batchCancel" class="secondary" hidden>Cancel</button>
+        <button type="button" id="batchRun" class="field-btn go" disabled>Make them all</button>
+        <button type="button" id="batchCancel" class="secondary field-btn" hidden>Cancel</button>
       </div>
       <progress id="batchProgress" max="100" value="0" hidden></progress>
       <p class="hint" id="batchStatus"></p>
@@ -302,6 +287,22 @@
   </div>
 
   <div class="preview-col">
+    <section class="panel slim" id="panelShape">
+      <div class="fields">
+        <label class="grow">Base shape
+          <select id="baseShape">
+            <option value="text" selected>Follow the text</option>
+            <option value="plate">Rectangle plate</option>
+            <option value="round">Round / oval</option>
+            <option value="hex">Hexagon</option>
+            <option value="dogbone">Dog bone</option>
+          </select>
+        </label>
+        <label id="plateRadiusWrap" hidden>Corner radius (mm) <input type="number" id="plateRadius" min="0" step="0.5"></label>
+        <label id="boneShaftWrap" hidden>Shaft thickness (%) <input type="number" id="boneShaft" min="20" max="95" step="5"></label>
+      </div>
+    </section>
+
     <section class="preview-box">
       <div class="preview-head">
         <h2>Preview</h2>
@@ -357,10 +358,10 @@
           <option value="svg">SVG (laser)</option>
         </select>
         <button id="downloadBtn" type="button" disabled>Download STEP</button>
+        <button id="copyLink" type="button" class="secondary" title="Copy a link that recreates this design">Copy link</button>
       </div>
-      <div class="control-row"><button id="copyLink" type="button" class="secondary">Copy link to this design</button></div>
-      <p class="hint" id="exportInfo"></p>
       <p class="hint" id="printSummary"></p>
+      <p class="hint" id="exportInfo"></p>
     </section>
   </div>
 </main>

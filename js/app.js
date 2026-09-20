@@ -138,13 +138,15 @@ function syncLabels() {
   for (const show of sliderBoxes) show();
   const angle = Number(el.holeAngle.value);
   const compass = ['right', 'top right', 'top', 'top left', 'left', 'bottom left', 'bottom', 'bottom right'];
-  el.holeAngleUnit.textContent = `\u00b0 \u00b7 ${compass[Math.round(angle / 45) % 8]}`;
+  el.holeAngleUnit.textContent = '\u00b0';
+  el.holeAngleNum.title = compass[Math.round(angle / 45) % 8]; // (hover: which way that points)
   for (const b of el.holeQuick.children) b.classList.toggle('active', Math.round(angle) === Number(b.dataset.angle));
   el.holeControls.style.opacity = el.holeEnabled.checked ? '1' : '0.45';
   // Show only the parts of the Back panel that apply, and only the rings that exist.
   const kind = el.backKind.value;
   el.backControls.hidden = kind === 'none';
   el.backQrWrap.hidden = kind !== 'qr';
+  el.qrEccWrap.hidden = kind !== 'qr';
   el.backTextWrap.hidden = kind !== 'text';
   el.backArtNote.hidden = kind !== 'art';
   for (const r of document.querySelectorAll('.ring-row')) r.hidden = Number(r.dataset.ring) > Number(el.rings.value);
@@ -454,6 +456,8 @@ function designQuery() {
   if (entry && !el.font.value.startsWith('u:') && entry !== first) values.font = entry.name;
   if (lineShifts.some(Boolean)) values.lineShifts = csv(lineShifts);
   if (lineShiftsY.some(Boolean)) values.lineShiftsY = csv(lineShiftsY);
+  // A shape whose usual hole spot isn't the default (the dog bone's top edge) always spells the angle out, so its links keep it.
+  if (holeAngleFor(el.baseShape.value) !== DEFAULTS.holeAngle) values.holeAngle = el.holeAngle.value;
   return toQuery(values);
 }
 
@@ -470,6 +474,8 @@ function applyFromUrl() {
   if (!Object.keys(values).length) return;
   const { font, lineShifts: ls, lineShiftsY: lsy, ...controls } = values;
   applyValues(document.querySelector('main'), controls);
+  // A link that names a shape but not where the hole goes gets that shape's usual spot.
+  if (controls.baseShape && !('holeAngle' in controls)) el.holeAngle.value = String(holeAngleFor(el.baseShape.value));
   if (font) {
     const opt = [...el.font.options].find((o) => o.textContent === font);
     if (opt) el.font.value = opt.value;

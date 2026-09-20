@@ -114,10 +114,11 @@ main { max-width: 1080px; }
 @media (max-width: 899px) {
   /* Phone/tablet: keep the preview pinned while scrolling through the controls, with the text and size just under it. */
   .controls, .preview-col { display: contents; }
+  #panelShape { order: -4; }
   .preview-box { order: -3; position: sticky; top: 0.5rem; z-index: 5; background: var(--surface); }
   #panelText { order: -2; }
   #panelSize { order: -1; }
-  .preview-col > .panel:not(#panelSize) { order: 99; }
+  .preview-col > .panel:not(#panelSize):not(#panelShape) { order: 99; }
 }
 
 .panel h2, .preview-box h2 {
@@ -185,7 +186,11 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .checkbox-row label { min-width: auto; display: flex; align-items: center; gap: 0.45rem; }
 
 .fields { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-bottom: 0.7rem; }
-.fields label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; color: var(--text-dim); flex: 1 1 7rem; }
+.fields label { display: flex; flex-direction: column; justify-content: flex-end; gap: 0.25rem; font-size: 0.8rem; color: var(--text-dim); flex: 1 1 7rem; }
+/* A checkbox that shares a row with boxes, a narrow box, and a hint that sits beside one. */
+.fields label.check { flex: 1 1 8rem; flex-direction: row; align-items: center; justify-content: flex-start; align-self: flex-end; gap: 0.45rem; min-height: var(--control-h); font-size: 0.9rem; color: var(--text); }
+.fields label.narrow { flex: 0 0 6.5rem; }
+.fields .fields-hint { flex: 1 1 10rem; align-self: flex-end; min-height: var(--control-h); display: flex; align-items: center; margin: 0; }
 .fields input, .fields select { width: 100%; }
 
 .layer-grid {
@@ -227,9 +232,10 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .preview-canvas canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .preview-box .hint { margin: 0.5rem 0 0; }
 
-.download-row { margin-bottom: 0; flex-wrap: nowrap; }
-.download-row select { flex: 0 1 11rem; min-width: 0; }
-.download-row button { flex: 1 1 auto; white-space: nowrap; padding-left: 0.8rem; padding-right: 0.8rem; }
+.download-row { margin-bottom: 0.4rem; gap: 0.5rem; }
+.download-row select { flex: 0 1 8rem; min-width: 0; }
+.download-row #downloadBtn { flex: 1 1 9rem; white-space: nowrap; padding-left: 0.8rem; padding-right: 0.8rem; }
+.download-row #copyLink { flex: 0 0 auto; white-space: nowrap; }
 #exportInfo:empty { display: none; }
 
 .scale-buttons { display: flex; gap: 0.4rem; flex-wrap: wrap; flex: 1; }
@@ -249,14 +255,26 @@ label.wide input { width: 100%; }
 
 /* Font + Align + Upload share a line: the font gets the extra room, the button lines up with the boxes. */
 .fields label.grow { flex: 2 1 10rem; }
-.fields .field-btn { flex: 0 0 auto; align-self: flex-end; height: var(--control-h); padding-top: 0; padding-bottom: 0; }
+.fields .field-btn { flex: 0 0 auto; align-self: flex-end; height: var(--control-h); padding-top: 0; padding-bottom: 0; white-space: nowrap; }
 #fontNote:empty { display: none; }
+
+/* A panel heading with a checkbox on the right. */
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.6rem; }
+.panel-head h2 { margin: 0; }
+.check-inline { display: flex; align-items: center; gap: 0.45rem; font-size: 0.9rem; }
 
 /* Two sliders side by side (left / right and up / down). */
 .slider-pair, .shift-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
 .shift-pair .slider-row.inline { grid-template-columns: 1.2rem auto minmax(0, 1fr); gap: 0 0.3rem; margin-bottom: 0.3rem; }
 .shift-pair .slider-row > label { font-size: 1.05rem; line-height: 1; text-align: center; cursor: help; }
 .shift-pair .val input.numval { width: 2.7rem; }
+/* The right column holds a lot in a laptop-sized window, so its cards are a little tighter. */
+.preview-col { gap: 0.7rem; }
+.preview-col .panel, .preview-box { padding: 0.7rem 0.9rem; }
+.preview-col .panel h2 { margin-bottom: 0.45rem; }
+.preview-col .fields, .preview-col .slider-row, .preview-col .control-row { margin-bottom: 0.5rem; }
+.panel.slim { padding: 0.6rem 0.9rem 0.3rem; }
+.panel.slim .fields { margin-bottom: 0.3rem; }
 .fields.compact label { flex: 1 1 5rem; } /* Width, Height and Units stay on one line, even on a phone */
 
 /* Nerd Shite: the less common settings, folded away. */

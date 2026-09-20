@@ -1,7 +1,7 @@
 // Self-test: builds keychains and checks them. Open tests/index.html (served over http) and press Run all.
 // Results are also left on window.__testResults for scripts.
 
-import { parseFont } from '../js/layout.js';
+import { parseFont, layoutText, flattenContour, bboxOfPolylines } from '../js/layout.js';
 import { buildKeychain } from '../js/geometry.js';
 import { stlFilesFromModel } from '../js/mesh.js';
 import { estimate, analyze, PRINT_DEFAULTS } from '../js/print.js';
@@ -10,7 +10,7 @@ import { parseBatch, runBatch } from '../js/batch.js';
 import { snapshot, diffState, toQuery, parseQuery, applyValues } from '../js/state.js';
 import { loadArtSource, traceArt } from '../js/art.js';
 import { fitArcs, sampleFitted } from '../js/arcs.js';
-import { circlePoints, plateRing } from '../js/clip.js';
+import { circlePoints, plateRing, CL, toPath, allPaths, unionTree, offsetTree, runClipper } from '../js/clip.js';
 
 // ---- helpers ----------------------------------------------------------------------------
 
@@ -374,6 +374,45 @@ test('a border is a raised rim along the edge of the base, as tall as the layer 
   assert(!build(f, { borderW: 0 }).layers.some((l) => l.key === 'border'), 'no border by default');
   const wide = build(f, { baseMargin: 0.5, borderW: 1.5 });
   assert(wide.warnings.some((w) => /border/.test(w)), 'a border that runs into the outline is flagged');
+});
+
+test('Potts Graffiti: the second T of a pair drops and tucks left instead of merging with the first', () => {
+  const f = font(/Graffiti/);
+  const one = layoutText(f, 'T', { align: 'left' }).length; // contours per T
+  const groups = (text) => {
+    const cs = layoutText(f, text, { align: 'left' });
+    assert(cs.length % one === 0, `${text}: ${cs.length} contours`);
+    return Array.from({ length: cs.length / one }, (_, g) => cs.slice(g * one, (g + 1) * one).map((c) => flattenContour(c, 0.05)));
+  };
+  const paths = (polylines) => allPaths(unionTree(polylines.map(toPath)));
+  const gap = (a, b) => { // how close two shapes come, by growing one until it meets the other
+    let lo = 0, hi = 30;
+    for (let i = 0; i < 9; i++) {
+      const g = (lo + hi) / 2;
+      const hit = allPaths(runClipper(CL.ClipType.ctIntersection, allPaths(offsetTree(paths(a), g)), paths(b))).length > 0;
+      if (hit) hi = g; else lo = g;
+    }
+    return lo;
+  };
+  for (const text of ['TT', 'tt']) {
+    const [a, b] = groups(text);
+    assert(gap(a, b) >= 4, `${text}: the two T's come within ${gap(a, b).toFixed(1)} units of each other`);
+    const A = bboxOfPolylines(a), B = bboxOfPolylines(b);
+    near(A.y1 - B.y1, 16, 0.5, `${text}: the second T drops 0.16 of the font size`);
+    assert(B.x0 < A.x1 - 20, `${text}: and tucks under the first one's crossbar`);
+  }
+  const [t1, t2, t3] = groups('TTT');
+  near(bboxOfPolylines(t3).y1, bboxOfPolylines(t1).y1, 0.5, 'in a run of three, the third T is back up');
+  assert(bboxOfPolylines(t2).y1 < bboxOfPolylines(t1).y1 - 10, 'and the second one is down');
+  // the letters after the tucked T follow it, and everything else in the font is untouched
+  const plain = layoutText(f, 'PO', { align: 'left' });
+  assert(JSON.stringify(plain) === JSON.stringify(layoutText(f, 'PO', { align: 'left' })), 'PO is laid out as before');
+  const before = bboxOfPolylines(layoutText(f, 'TS', { align: 'left' }).map((c) => flattenContour(c, 0.05)));
+  const after = bboxOfPolylines(layoutText(f, 'TTS', { align: 'left' }).map((c) => flattenContour(c, 0.05)));
+  near(after.x1 - before.x1, f.getAdvanceWidth('TTS', 100) - f.getAdvanceWidth('TS', 100) - 32, 1.5, 'the S follows the tucked T (one T wider, less the 32 units it moved left)');
+  const carter = font(/Carter/);
+  const c = layoutText(carter, 'TT', { align: 'left' });
+  near(bboxOfPolylines(c.map((k) => flattenContour(k, 0.05))).y0, bboxOfPolylines(layoutText(carter, 'T', { align: 'left' }).map((k) => flattenContour(k, 0.05))).y0, 1e-6, 'other fonts are left alone');
 });
 
 test('line offsets move a line relative to the others; a frozen layout rebuilds identically', () => {

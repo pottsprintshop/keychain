@@ -9,6 +9,8 @@ import { dxfFromModel, svgFromModel } from '../js/laser.js';
 import { parseBatch, runBatch } from '../js/batch.js';
 import { snapshot, diffState, toQuery, parseQuery, applyValues } from '../js/state.js';
 import { loadArtSource, traceArt } from '../js/art.js';
+import { fitArcs, sampleFitted } from '../js/arcs.js';
+import { circlePoints, plateRing } from '../js/clip.js';
 
 // ---- helpers ----------------------------------------------------------------------------
 
@@ -328,9 +330,37 @@ test('print check: estimates add up, thin details are found, settings are checke
   assert(/Outline is only/.test(odd) && /key hole/.test(odd) && /multiple/.test(odd), 'settings warnings: ' + odd);
 });
 
+test('arc fitting: circles and rounded corners become arcs, corners stay lines, the shape holds', () => {
+  const dev = (ring, fitted) => Math.max(...ring.map(([x, y]) => distToRings(x, y, [fitted])));
+  const circle = circlePoints(5, -3, 6, 0.01);
+  const c = fitArcs(circle);
+  assert(c.segs.length <= 4 && c.segs.filter((s) => s[0] === 'A').length >= 2, `a circle is ${c.segs.length} segments, ${c.segs.filter((s) => s[0] === 'A').length} of them arcs`);
+  const back = sampleFitted(c, 0.01);
+  near(ringArea(back), Math.PI * 36, 0.35, 'circle area');
+  assert(dev(circle, back) < 0.005, `circle deviates ${dev(circle, back)}`);
+
+  const box = [[0, 0], [40, 0], [40, 20], [0, 20]];
+  const b = fitArcs(box);
+  assert(b.segs.length === 4 && b.segs.every((s) => s[0] === 'L'), 'a rectangle stays four lines');
+
+  const plate = plateRing(20, 10, 3); // rounded rectangle, as a dense polyline
+  const p = fitArcs(plate);
+  const arcs = p.segs.filter((s) => s[0] === 'A').length;
+  assert(arcs >= 4 && arcs <= 8 && p.segs.length <= 16 && p.segs.length < plate.length / 2, `plate: ${arcs} arcs of ${p.segs.length} segments from ${plate.length} points`);
+  const pb = sampleFitted(p, 0.01);
+  near(ringArea(pb), ringArea(plate), 0.15, 'plate area');
+  assert(dev(plate, pb) < 0.005, `plate deviates ${dev(plate, pb)}`);
+
+  const zig = Array.from({ length: 12 }, (_, i) => [i * 0.5, i % 2 ? 0.2 : 0]); // a zig-zag is not an arc
+  assert(fitArcs(zig).segs.every((s) => s[0] === 'L'), 'a zig-zag has no arcs');
+  const rev = fitArcs(plate.slice().reverse()); // the same shape wound the other way
+  assert(Math.abs(rev.segs.length - p.segs.length) <= 2, `winding changes the fit: ${rev.segs.length} vs ${p.segs.length}`);
+  near(ringArea(sampleFitted(rev, 0.01)), ringArea(plate), 0.15, 'reversed plate area');
+});
+
 // STEP round trips need the CAD engine: load it on the main thread too, to read the file back.
 let R = null;
-async function stepCheck(m, label) {
+async function stepCheck(m, label, { maxMB, arcs = true, exactText = false } = {}) {
   const { buildStep } = await import('../js/step.js');
   if (!R) {
     R = await import('../vendor/replicad.js');
@@ -342,13 +372,18 @@ async function stepCheck(m, label) {
   for (const l of m.layers) assert(text.includes(`'${l.name}'`), `${label}: STEP is missing a body named "${l.name}"`);
   const shape = await R.importSTEP(res.blob);
   const total = m.layers.reduce((t, l) => t + netArea(l.polys) * (l.z1 - l.z0), 0);
-  near(R.measureVolume(shape) / total, 1, 0.0015, `${label}: STEP volume vs model`);
+  // Arcs are the true curves the polygons only approximate, so the volumes differ by a fraction of a percent.
+  near(R.measureVolume(shape) / total, 1, 0.005, `${label}: STEP volume vs model`);
   assert(res.report.base === 'exact', `${label}: the base fell back to polygons (${res.report.baseWhy || ''})`);
-  return `${label}: ${(res.blob.size / 1e6).toFixed(1)} MB`;
+  if (arcs) assert(res.report.outline === 'arcs' && res.report.baseFaces === 'arcs', `${label}: outlines were not built from arcs (${JSON.stringify(res.report)})`);
+  if (exactText) assert(res.report.text === 'exact', `${label}: the text fell back to polygons`);
+  const mb = res.blob.size / 1e6;
+  if (maxMB) assert(mb <= maxMB, `${label}: ${mb.toFixed(1)} MB is over the ${maxMB} MB budget`);
+  return `${label}: ${mb.toFixed(1)} MB, ${res.report.edges.points} points -> ${res.report.edges.segments} edges`;
 }
-test('STEP: default plate with a QR code', () => stepCheck(build(font(/Carter/), { baseShape: 'plate', backKind: 'qr', qrText: URL_MED }), 'plate+QR'), { step: true });
-test('STEP: text-shaped base, 3 rings, back text', () => stepCheck(build(font(/Graffiti/), { text: 'WHOOP\nWHOOP!!', rings: 3, backKind: 'text', backText: 'If found call\n303-555-0100' }), 'graffiti'), { step: true });
-test('STEP: lines dragged together (overlapping glyphs)', () => stepCheck(build(font(/Carter/), { lineShiftsY: [0, 35] }), 'overlap'), { step: true });
+test('STEP: default plate with a QR code', () => stepCheck(build(font(/Carter/), { baseShape: 'plate', backKind: 'qr', qrText: URL_MED }), 'plate+QR', { maxMB: 8 }), { step: true });
+test('STEP: text-shaped base, 3 rings, back text', () => stepCheck(build(font(/Graffiti/), { text: 'WHOOP\nWHOOP!!', rings: 3, backKind: 'text', backText: 'If found call\n303-555-0100' }), 'graffiti', { maxMB: 12 }), { step: true });
+test('STEP: lines dragged together (overlapping glyphs)', () => stepCheck(build(font(/Carter/), { lineShiftsY: [0, 35] }), 'overlap', { maxMB: 4 }), { step: true });
 
 // ---- runner ----------------------------------------------------------------------------------------
 

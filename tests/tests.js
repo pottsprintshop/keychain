@@ -2,7 +2,7 @@
 // Results are also left on window.__testResults for scripts.
 
 import { parseFont, layoutText, flattenContour, bboxOfPolylines } from '../js/layout.js';
-import { buildKeychain } from '../js/geometry.js';
+import { buildKeychain, tagText } from '../js/geometry.js';
 import { stlFilesFromModel } from '../js/mesh.js';
 import { estimate, analyze, PRINT_DEFAULTS } from '../js/print.js';
 import { dxfFromModel, svgFromModel } from '../js/laser.js';
@@ -494,6 +494,33 @@ test('the Sports tag: a long thin rectangle, a last name and an icon, all inside
   const plain = build(f, { baseShape: 'sports', text: 'Deutsch', width: 101.6, height: 25.4 });
   assert(plain.exact.hole.cx < -40, 'the key hole is at the left end');
   assert(plain.scale.x > 0.05, 'the name is a reasonable size');
+});
+
+test('the Sports tag: 0.75 in high with a border, and an optional number after the name', () => {
+  const f = font(/Carter/);
+  assert(tagText(f, { baseShape: 'sports', text: 'Deutsch', sportNumber: '' }) === 'Deutsch', 'no number, no change');
+  assert(tagText(f, { baseShape: 'sports', text: 'Deutsch', sportNumber: '   ' }) === 'Deutsch', 'a blank number is no number');
+  assert(/^Deutsch {1,8}12$/.test(tagText(f, { baseShape: 'sports', text: 'Deutsch\n', sportNumber: ' 12 ' })), 'the number follows the name, a space or two away');
+  assert(tagText(f, { baseShape: 'plate', text: 'Deutsch', sportNumber: '12' }) === 'Deutsch', 'only the Sports tag uses it');
+  const over = { baseShape: 'sports', text: 'Deutsch', width: 101.6, height: 19.05, borderW: 0.8, art: getIcon('soccer'), artMode: 'right', artLines: 1 };
+  const plain = build(f, over), numbered = build(f, { ...over, sportNumber: '12' });
+  for (const m of [plain, numbered]) {
+    near(m.size.w, 101.6, 0.1, 'still 4 in long');
+    near(m.size.h, 19.05, 0.1, 'and 0.75 in high');
+    const rim = m.layers.find((l) => l.key === 'border');
+    assert(rim && rim.polys.length >= 1, 'has the border');
+    assert(m.warnings.length === 0, m.warnings.join(' | '));
+    const base = m.layers.find((l) => l.key === 'base').polys;
+    for (const p of m.layers.find((l) => l.key === 'text').polys) for (const [x, y] of p.outer) assert(insidePolys(x, y, base), 'the name, number and icon stay on the tag');
+    for (const file of stlFilesFromModel(m, 't')) {
+      const st = stlStats(file.data), exp = volumeOf(m, file.key);
+      assert(st.open === 0, `${file.key}: ${st.open} open edges`);
+      near(st.vol / exp, 1, 0.001, `${file.key} volume`);
+    }
+  }
+  const glyphs = (m) => m.layers.find((l) => l.key === 'text').polys.length;
+  assert(glyphs(numbered) >= glyphs(plain) + 2, `two more letters of ink (${glyphs(plain)} -> ${glyphs(numbered)})`);
+  assert(numbered.scale.x < plain.scale.x, 'the name gets a little smaller to make room');
 });
 
 test('line offsets move a line relative to the others; a frozen layout rebuilds identically', () => {

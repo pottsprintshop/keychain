@@ -89,12 +89,19 @@ export function createPreview(container) {
   const render = () => renderer.render(scene, camera);
   controls.addEventListener('change', render);
 
+  let framedAspect = null; // the aspect ratio the camera was last fitted for
+  let moved = false; // has the user orbited or zoomed since?
+  controls.addEventListener('start', () => (moved = true));
+
   function resize() {
     const w = container.clientWidth || 300;
     const h = container.clientHeight || 300;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    // A canvas that changes shape (a window resized, a phone turned, a panel that wasn't laid out yet when the
+    // keychain was fitted) needs the fit redone, unless the user has set the view themselves.
+    if (framedAspect && !moved && Math.abs(camera.aspect / framedAspect - 1) > 0.05) frame(mode);
     render();
   }
   new ResizeObserver(resize).observe(container);
@@ -106,6 +113,8 @@ export function createPreview(container) {
     const fitH = size.h / 2 / tan;
     const fitW = size.w / 2 / (tan * camera.aspect);
     const dist = Math.max(fitH, fitW) * 1.15 + size.d;
+    framedAspect = camera.aspect;
+    moved = false;
     controls.target.set(0, 0, size.d / 2);
     if (view === 'top') camera.position.set(0, 0, dist + size.d / 2);
     else if (view === 'back') camera.position.set(0, 0, -dist); // looking up at the underside; a QR reads correctly

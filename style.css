@@ -191,7 +191,9 @@ input[type="checkbox"] { accent-color: var(--accent); }
 /* A checkbox that shares a row with boxes, a narrow box, and a hint that sits beside one. */
 .fields label.check { flex: 1 1 8rem; flex-direction: row; align-items: center; justify-content: flex-start; align-self: flex-end; gap: 0.45rem; min-height: var(--control-h); font-size: 0.9rem; color: var(--text); }
 .fields label.narrow { flex: 0 0 6.5rem; }
-#sportWrap { flex: 1 1 9.5rem; }
+#panelShape .fields label.grow { flex: 2 1 8rem; }
+#sportWrap { flex: 1 1 7.5rem; }
+#sportNumberWrap { flex: 1 1 4.5rem; }
 .fields .fields-hint { flex: 1 1 10rem; align-self: flex-end; min-height: var(--control-h); display: flex; align-items: center; margin: 0; }
 .fields input, .fields select { width: 100%; }
 .fields input[type="checkbox"] { width: auto; }

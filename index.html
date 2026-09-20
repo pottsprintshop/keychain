@@ -304,7 +304,7 @@
 
   <div class="preview-col">
     <section class="panel slim needs-base" id="panelShape">
-      <div class="fields">
+      <div class="fields compact">
         <label class="grow">Base shape
           <select id="baseShape">
             <option value="text" selected>Follow the text</option>
@@ -324,6 +324,7 @@
             <option value="none">No icon</option>
           </select>
         </label>
+        <label id="sportNumberWrap" hidden title="Optional: a number that goes after the name">Number <input type="text" id="sportNumber" maxlength="6" placeholder="optional" autocomplete="off" spellcheck="false"></label>
         <label id="plateRadiusWrap" hidden>Corner radius (mm) <input type="number" id="plateRadius" min="0" step="0.5"></label>
         <label id="boneShaftWrap" hidden>Shaft thickness (%) <input type="number" id="boneShaft" min="20" max="95" step="5"></label>
         <label id="borderWrap" title="A raised rim around the edge, in the color of the layer above the base">Border (mm) <input type="number" id="borderW" min="0" step="0.1"></label>

@@ -57,8 +57,10 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   its own body in the exports. The dog bone starts with the key hole in the middle of its top edge,
   between the knobs, and a 0.8 mm border. Picking another shape moves these to that shape's usual
   values unless you've changed them yourself.
-- **Sports tag** — a long, thin rectangle (4 × 1 in) meant for a last name and a sport icon: tennis
-  racquet, baseball, football or soccer ball, drawn beside the text and as tall as it. The icons are
+- **Sports tag** — a long, thin rectangle (4 × 0.75 in, key hole tab included) with a 0.8 mm border,
+  meant for a last name and a sport icon: tennis racquet, baseball, football or soccer ball, drawn
+  beside the text and as tall as it. An optional **Number** (a jersey number, up to six characters)
+  goes after the name. The icons are
   built in (`js/icons.js`, made with Clipper cut-outs, nothing thinner than half a millimetre at 16 mm
   tall). The tag is meant for the **Impact** font, which is licensed to the computer it came with and so
   isn't shipped with the page: on desktop Chrome or Edge picking the tag looks it up on your computer

@@ -394,6 +394,19 @@ export function buildKeychain(font, params) {
     inkByLine.get(k).push(pl);
   });
   const lines = [...inkByLine].filter(([index]) => index >= 0).map(([index, inkLines]) => ({ index, ink: inkLines, bbox: bboxOfPolylines(inkLines) })); // (artwork isn't draggable)
+  // Lines of text (or artwork) dragged into each other overlap. The STEP export builds the glyph solids line by line
+  // and fuses them when that happens, so say whether it will need to.
+  const groupPaths = [...inkByLine].map(([index, group]) => allPaths(unionTree(group.map(toPath), index === -1 ? CL.PolyFillType.pftEvenOdd : CL.PolyFillType.pftNonZero)));
+  const groupBoxes = groupPaths.map((paths) => pathsBBox(paths));
+  let textOverlap = false;
+  for (let a = 0; a < groupPaths.length && !textOverlap; a++) {
+    for (let b = a + 1; b < groupPaths.length && !textOverlap; b++) {
+      const A = groupBoxes[a], B = groupBoxes[b];
+      if (Math.abs(A.cx - B.cx) * 2 > A.w + B.w || Math.abs(A.cy - B.cy) * 2 > A.h + B.h) continue;
+      const both = runClipper(CL.ClipType.ctIntersection, groupPaths[a], groupPaths[b]);
+      textOverlap = allPaths(both).length > 0;
+    }
+  }
   const half = halfBox(sx, sy, true);
   const layout = p.fixed || { sx, sy, tx: -ink.cx * sx + shx, ty: -ink.cy * sy + shy, shx, shy, hw: half.hw, hh: half.hh, widest: widestLine(font, p.text) };
 
@@ -411,7 +424,7 @@ export function buildKeychain(font, params) {
     ],
     back,
     // Extras the STEP export uses to build exact curves and a true circular hole.
-    exact: { contours, basePlain, baseLowerPlain, hole, holeTrack: holeTrackShifted },
+    exact: { contours, textOverlap, basePlain, baseLowerPlain, hole, holeTrack: holeTrackShifted },
     warnings,
   };
 }

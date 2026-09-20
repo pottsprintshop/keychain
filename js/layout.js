@@ -75,6 +75,7 @@ export function layoutText(font, text, { align = 'center', lineSpacing = 1, line
 export function transformContours(contours, sx, sy, tx = 0, ty = 0) {
   const P = (x, y) => [x * sx + tx, y * sy + ty];
   return contours.map((c) => ({
+    line: c.line, // which line of text (or -1 for artwork) it belongs to
     start: P(c.start[0], c.start[1]),
     segs: c.segs.map((s) => {
       if (s[0] === 'L') return ['L', ...P(s[1], s[2])];

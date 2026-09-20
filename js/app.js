@@ -55,6 +55,7 @@ function readParams() {
     fillGaps: el.fillGaps.checked,
     baseShape: el.baseShape.value,
     plateRadius: num(el.plateRadius, DEFAULTS.plateRadius, 0),
+    boneShaft: num(el.boneShaft, DEFAULTS.boneShaft * 100, 20) / 100,
     roundIn: num(el.roundIn, DEFAULTS.roundIn, 0),
     roundOut: num(el.roundOut, DEFAULTS.roundOut, 0),
     holeEnabled: el.holeEnabled.checked,
@@ -146,6 +147,9 @@ function syncLabels() {
   el.backTextWrap.hidden = kind !== 'text';
   el.backArtNote.hidden = kind !== 'art';
   for (const r of document.querySelectorAll('.ring-row')) r.hidden = Number(r.dataset.ring) > Number(el.rings.value);
+  // The corner radius is for the rectangle and hexagon; the shaft thickness for the dog bone.
+  el.plateRadiusWrap.hidden = !['plate', 'hex'].includes(el.baseShape.value);
+  el.boneShaftWrap.hidden = el.baseShape.value !== 'dogbone';
 }
 
 // ---- Building ------------------------------------------------------------------
@@ -722,6 +726,7 @@ function initForm() {
   for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'backDepth', 'backMargin', 'plateRadius', 'ring2W', 'ring2H', 'ring3W', 'ring3H', 'artLines']) {
     el[key].value = DEFAULTS[key];
   }
+  el.boneShaft.value = DEFAULTS.boneShaft * 100;
   el.holeAngle.value = DEFAULTS.holeAngle;
   el.holePush.value = Math.round(DEFAULTS.holePush * 100);
 }

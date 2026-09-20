@@ -171,9 +171,13 @@
           <select id="baseShape">
             <option value="text" selected>Follow the text</option>
             <option value="plate">Rectangle plate</option>
+            <option value="round">Round / oval</option>
+            <option value="hex">Hexagon</option>
+            <option value="dogbone">Dog bone</option>
           </select>
         </label>
-        <label>Plate corner radius (mm) <input type="number" id="plateRadius" min="0" step="0.5"></label>
+        <label id="plateRadiusWrap" hidden>Corner radius (mm) <input type="number" id="plateRadius" min="0" step="0.5"></label>
+        <label id="boneShaftWrap" hidden>Shaft thickness (% of height) <input type="number" id="boneShaft" min="20" max="95" step="5"></label>
       </div>
       <div class="control-row checkbox-row">
         <label><input type="checkbox" id="fillGaps" checked> Solid base (fill gaps between letters)</label>
@@ -272,7 +276,7 @@
         <div class="control-row checkbox-row">
           <label><input type="checkbox" id="backAuto" checked> Contrast with the base color automatically</label>
         </div>
-        <p class="hint" id="backInfo">Recessed flush into the underside of the base, in a color that contrasts with it: light on a dark base, dark on a light base. Turn the keychain over like a page and it reads correctly. A Rectangle base (under Layers) leaves room for a bigger back. Light-on-dark is a negative image: iPhone Camera and most current Android scanners read a QR code that way, but a few older apps only read dark-on-light; the plate option adds a light square with a border so it reads the usual way.</p>
+        <p class="hint" id="backInfo">Recessed flush into the underside of the base, in a color that contrasts with it: light on a dark base, dark on a light base. Turn the keychain over like a page and it reads correctly. A plate base (Rectangle, Round, Hexagon, under Layers) leaves room for a bigger back. Light-on-dark is a negative image: iPhone Camera and most current Android scanners read a QR code that way, but a few older apps only read dark-on-light; the plate option adds a light square with a border so it reads the usual way.</p>
       </div>
     </section>
 

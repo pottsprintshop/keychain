@@ -27,7 +27,7 @@ export function createPreview(container) {
   const ndc = new THREE.Vector2();
   const dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
   const hitPoint = new THREE.Vector3();
-  let handlers = null; // { pick(x, y) -> line | -1, start(line), move(line, dx, dy), end(line) }
+  let handlers = null; // { pick(x, y) -> line | 'art' | -1, start(line), move(line, dx, dy), end(line) }
   let drag = null;
   const canvas = renderer.domElement;
   const toModel = (ev) => {
@@ -43,7 +43,7 @@ export function createPreview(container) {
       if (!handlers || mode !== 'top' || ev.button !== 0) return;
       const pt = toModel(ev);
       const line = pt ? handlers.pick(pt[0], pt[1]) : -1;
-      if (line < 0) return;
+      if (line === -1) return;
       ev.stopImmediatePropagation();
       ev.preventDefault();
       controls.enabled = false;
@@ -60,7 +60,7 @@ export function createPreview(container) {
       if (pt) handlers.move(drag.line, pt[0] - drag.x0, pt[1] - drag.y0);
     } else if (handlers && mode === 'top' && ev.buttons === 0) {
       const pt = toModel(ev);
-      canvas.style.cursor = pt && handlers.pick(pt[0], pt[1]) >= 0 ? 'grab' : '';
+      canvas.style.cursor = pt && handlers.pick(pt[0], pt[1]) !== -1 ? 'grab' : '';
     }
   });
   const endDrag = (ev) => {

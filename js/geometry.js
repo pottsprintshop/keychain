@@ -73,6 +73,8 @@ export const DEFAULTS = {
   // instead of sizing relative to the text. 0 = off (use artLines/artShiftX/Y like any other artwork).
   artSizeMM: 0,
   artInsetMM: 0,
+  artOffsetXmm: 0, // manual nudge on top of the edge placement (mm), from dragging the logo or the reset button
+  artOffsetYmm: 0,
 };
 
 // ---- Base shapes -------------------------------------------------------------
@@ -219,18 +221,19 @@ export function angleForHeight(track, side, frac) {
 
 // Which line of text is under (x, y)? An exact hit on the letters wins; otherwise the nearest line
 // whose (slightly padded) box contains the point. Returns the line number or -1.
-export function pickLine(lines, x, y, pad = 1.5) {
-  const inside = (polylines) => {
-    let odd = false;
-    for (const pl of polylines) {
-      for (let i = 0, n = pl.length, j = n - 1; i < n; j = i++) {
-        const [xi, yi] = pl[i], [xj, yj] = pl[j];
-        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) odd = !odd;
-      }
+function pointInPolylines(polylines, x, y) {
+  let odd = false;
+  for (const pl of polylines) {
+    for (let i = 0, n = pl.length, j = n - 1; i < n; j = i++) {
+      const [xi, yi] = pl[i], [xj, yj] = pl[j];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) odd = !odd;
     }
-    return odd;
-  };
-  for (const l of lines) if (inside(l.ink)) return l.index;
+  }
+  return odd;
+}
+
+export function pickLine(lines, x, y, pad = 1.5) {
+  for (const l of lines) if (pointInPolylines(l.ink, x, y)) return l.index;
   let best = -1, bestD = Infinity;
   for (const l of lines) {
     const b = l.bbox;
@@ -239,6 +242,14 @@ export function pickLine(lines, x, y, pad = 1.5) {
     if (d < bestD) { bestD = d; best = l.index; }
   }
   return best;
+}
+
+// Is (x, y) on the Name plate's edge-pinned logo? Exact hit on its outline wins; otherwise its (slightly padded) box.
+export function hitsArt(art, x, y, pad = 1.5) {
+  if (!art) return false;
+  if (pointInPolylines(art.ink, x, y)) return true;
+  const b = art.bbox;
+  return x >= b.x0 - pad && x <= b.x1 + pad && y >= b.y0 - pad && y <= b.y1 + pad;
 }
 
 // ---- Fit + build ------------------------------------------------------------
@@ -422,8 +433,10 @@ export function buildKeychain(font, params) {
     // The plate is symmetric (and centred on the origin), so a point this far from the text's own centre lands
     // this far from the plate's centre in mm once the whole design is centred (text bias included) — true as long
     // as the key hole (if any) doesn't push the design off-centre, which is the common case for a Name plate.
-    const cx = (side * (hw - p.artInsetMM - halfWmm) - edgeBiasMM) / sx + ink.cx;
-    const base = ink.cy - s / 2;
+    // artOffsetXmm/Ymm is a manual nudge on top of that (mm, so it can be added straight to the model's own
+    // coordinates): dragging the logo in the Top view, or the reset button, sets it.
+    const cx = (side * (hw - p.artInsetMM - halfWmm) - edgeBiasMM) / sx + ink.cx + p.artOffsetXmm / sx;
+    const base = ink.cy - s / 2 + p.artOffsetYmm / sy;
     const P = (x, y) => [cx + x * s, base + y * s];
     raw = raw.concat(p.art.contours.map((c) => ({
       line: -1,
@@ -575,7 +588,10 @@ export function buildKeychain(font, params) {
     if (!inkByLine.has(k)) inkByLine.set(k, []);
     inkByLine.get(k).push(pl);
   });
-  const lines = [...inkByLine].filter(([index]) => index >= 0).map(([index, inkLines]) => ({ index, ink: inkLines, bbox: bboxOfPolylines(inkLines) })); // (artwork isn't draggable)
+  const lines = [...inkByLine].filter(([index]) => index >= 0).map(([index, inkLines]) => ({ index, ink: inkLines, bbox: bboxOfPolylines(inkLines) }));
+  // The Name plate's edge-pinned logo can be dragged too (ordinary artwork placement, e.g. the Sports icon, can't).
+  const artInk = inkByLine.get(-1);
+  const artPick = edgeArt && artInk ? { ink: artInk, bbox: bboxOfPolylines(artInk) } : null;
   // Lines of text (or artwork) dragged into each other overlap. The STEP export builds the glyph solids line by line
   // and fuses them when that happens, so say whether it will need to.
   const groupPaths = [...inkByLine].map(([index, group]) => allPaths(unionTree(group.map(toPath), index === -1 ? CL.PolyFillType.pftEvenOdd : CL.PolyFillType.pftNonZero)));
@@ -595,6 +611,7 @@ export function buildKeychain(font, params) {
   return {
     params: p,
     lines,
+    artPick,
     layout,
     size: { w: width, h: height, d: z3 },
     scale: { x: sx, y: sy },

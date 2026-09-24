@@ -1,5 +1,5 @@
 import { parseFont, fontDisplayName, NOMINAL } from './layout.js';
-import { buildKeychain, angleForHeight, pickLine, DEFAULTS } from './geometry.js';
+import { buildKeychain, angleForHeight, pickLine, hitsArt, DEFAULTS } from './geometry.js';
 import { createPreview } from './preview.js';
 import { zipStore, downloadBlob, slug } from './exporters.js';
 import { stlFilesFromModel } from './mesh.js';
@@ -29,6 +29,7 @@ let dragQueued = false;
 let artSource = null; // the loaded image
 let art = null; // its traced outlines (see art.js)
 let artTimer = null;
+let artOffsetX = 0, artOffsetY = 0; // the Name plate logo's manual nudge off its auto edge position (mm), from dragging it
 const SHIFT_X_MAX = 100, SHIFT_Y_MAX = 150;
 
 // ---- Reading the form --------------------------------------------------------
@@ -38,9 +39,9 @@ function num(input, fallback, min = 0) {
   return Number.isFinite(v) && v >= min ? v : fallback;
 }
 
-// The Name plate's logo: an initial ~40 mm tall, 12.7 mm (0.5") in from the right edge. It auto-resizes (shrinks)
-// to stay clear of the text and the plate's own edge, so a differently-shaped logo just fits.
-const NAMEPLATE_LOGO_MM = 40;
+// The Name plate's logo: pinned 12.7 mm (0.5") in from the right edge by default, at the Size slider's mm height
+// (40 mm to start). It auto-resizes (shrinks) to stay clear of the text and the plate's own edge, so a
+// differently-shaped logo just fits; dragging it in the Top view, or the Size slider, override that.
 const NAMEPLATE_INSET_MM = 12.7;
 
 function readParams() {
@@ -97,7 +98,14 @@ function readParams() {
     ...(icon
       ? { art: icon, artMode: 'right', artLines: 1, artShiftX: 0, artShiftY: 0 }
       : nameplate && art
-      ? { art, artMode: 'right', artSizeMM: NAMEPLATE_LOGO_MM, artInsetMM: NAMEPLATE_INSET_MM }
+      ? {
+          art,
+          artMode: 'right',
+          artSizeMM: num(el.artSize, DEFAULTS.artSizeMM || 40, 5),
+          artInsetMM: NAMEPLATE_INSET_MM,
+          artOffsetXmm: artOffsetX,
+          artOffsetYmm: artOffsetY,
+        }
       : {
           art,
           artMode: el.artMode.value,
@@ -186,6 +194,8 @@ function syncLabels() {
   const nameplateArt = el.baseShape.value === 'nameplate';
   if (el.artPlaceFields) el.artPlaceFields.hidden = nameplateArt;
   if (el.artAutoHint) el.artAutoHint.hidden = !nameplateArt;
+  if (el.artSizeFields) el.artSizeFields.hidden = !nameplateArt;
+  if (el.artShiftFields) el.artShiftFields.hidden = nameplateArt;
 }
 
 // ---- Layers: the plus and minus buttons -------------------------------------------
@@ -402,25 +412,35 @@ function renderLineShifts() {
   }
 }
 
-// Drag a line of text in the Top view.
+// Drag a line of text, or the Name plate's logo, in the Top view.
 function enableLineDragging() {
   preview.enableDrag({
-    // Only with two or more lines; a single line is always re-centred, so moving it would just snap back.
-    pick: (x, y) => (model && model.lines.length > 1 ? pickLine(model.lines, x, y) : -1),
+    pick: (x, y) => {
+      // Only with two or more lines; a single line is always re-centred, so moving it would just snap back.
+      const line = model && model.lines.length > 1 ? pickLine(model.lines, x, y) : -1;
+      if (line !== -1) return line;
+      return model && hitsArt(model.artPick, x, y) ? 'art' : -1;
+    },
     start: (i) => {
       if (timer) rebuild();
-      dragBase = { layout: model.layout, x: lineShifts[i] || 0, y: lineShiftsY[i] || 0 };
+      dragBase = i === 'art' ? { art: true, x: artOffsetX, y: artOffsetY } : { layout: model.layout, x: lineShifts[i] || 0, y: lineShiftsY[i] || 0 };
     },
     move: (i, dx, dy) => {
       if (!dragBase) return;
-      const L = dragBase.layout;
-      // millimetres -> slider units: sideways is relative to the widest line, vertical to the font size
-      setShift(i, dragBase.x + (dx / (L.sx * L.widest)) * 100, dragBase.y + (dy / (L.sy * NOMINAL)) * 100);
+      if (dragBase.art) {
+        // The logo's offset is already in mm, the same units the drag itself reports in.
+        artOffsetX = dragBase.x + dx;
+        artOffsetY = dragBase.y + dy;
+      } else {
+        const L = dragBase.layout;
+        // millimetres -> slider units: sideways is relative to the widest line, vertical to the font size
+        setShift(i, dragBase.x + (dx / (L.sx * L.widest)) * 100, dragBase.y + (dy / (L.sy * NOMINAL)) * 100);
+      }
       if (!dragQueued) {
         dragQueued = true;
         requestAnimationFrame(() => {
           dragQueued = false;
-          if (dragBase) rebuild(dragBase.layout);
+          if (dragBase) rebuild(dragBase.art ? null : dragBase.layout);
         });
       }
     },
@@ -610,7 +630,7 @@ function initPrint() {
 
 let defaultState = null;
 let urlTimer = null;
-const NOSHARE = ['artMode', 'artLines', 'artShiftX', 'artShiftY', 'artThreshold', 'artDetail', 'artInvert', 'artSharpen', 'artSmooth', 'artDenoise', 'showThin', ...Object.values(PRINT_FIELDS)];
+const NOSHARE = ['artMode', 'artLines', 'artShiftX', 'artShiftY', 'artSize', 'artThreshold', 'artDetail', 'artInvert', 'artSharpen', 'artSmooth', 'artDenoise', 'showThin', ...Object.values(PRINT_FIELDS)];
 
 const csv = (list) => list.map((v) => +(Number(v) || 0).toFixed(2)).join(',');
 
@@ -785,10 +805,16 @@ async function retrace() {
 function clearArt() {
   artSource = null;
   art = null;
+  artOffsetX = artOffsetY = 0;
   el.artFile.value = '';
   el.artControls.hidden = true;
   el.artClear.hidden = true;
   el.artName.textContent = 'PNG, JPG or SVG — traced to an outline, like img2cad.';
+  schedule();
+}
+
+function resetArtPos() {
+  artOffsetX = artOffsetY = 0;
   schedule();
 }
 
@@ -804,6 +830,7 @@ function initArt() {
       el.artName.textContent = err.message;
       return;
     }
+    artOffsetX = artOffsetY = 0; // a new image starts back at its auto position
     el.artName.textContent = file.name;
     el.artControls.hidden = false;
     el.artClear.hidden = false;
@@ -812,9 +839,10 @@ function initArt() {
   });
   for (const id of ['artThreshold', 'artDetail']) el[id].addEventListener('input', retraceSoon);
   for (const id of ['artInvert', 'artSharpen', 'artSmooth', 'artDenoise']) el[id].addEventListener('input', retraceSoon);
-  for (const [range, box] of [['artThreshold', 'artThresholdNum'], ['artDetail', 'artDetailNum'], ['artShiftX', 'artShiftXNum'], ['artShiftY', 'artShiftYNum']]) {
+  for (const [range, box] of [['artThreshold', 'artThresholdNum'], ['artDetail', 'artDetailNum'], ['artShiftX', 'artShiftXNum'], ['artShiftY', 'artShiftYNum'], ['artSize', 'artSizeNum']]) {
     sliderBoxes.push(pairSliderAndBox(el[range], el[box], 0));
   }
+  el.artPosReset.addEventListener('click', resetArtPos);
 }
 
 // ---- Fonts -----------------------------------------------------------------------

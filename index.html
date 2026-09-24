@@ -60,7 +60,7 @@
       </div>
       <div id="artControls" hidden>
         <canvas id="artPreview" class="art-preview" width="320" height="200" aria-label="Traced artwork"></canvas>
-        <div class="fields">
+        <div class="fields" id="artPlaceFields">
           <label class="grow">Put it
             <select id="artMode">
               <option value="above" selected>Above the text</option>
@@ -71,6 +71,7 @@
           </label>
           <label>Height (lines) <input type="number" id="artLines" min="0.2" step="0.1"></label>
         </div>
+        <p class="hint" id="artAutoHint" hidden>The Name plate puts the logo on the right, about 40 mm tall and 12.7 mm (0.5") in from the edge — it shrinks automatically to stay clear of the text.</p>
         <div class="slider-pair">
           <div class="slider-row">
             <label for="artThreshold">Threshold</label>
@@ -320,6 +321,7 @@
             <option value="hex">Hexagon</option>
             <option value="dogbone">Dog bone</option>
             <option value="sports">Sports tag</option>
+            <option value="nameplate">Name plate</option>
           </select>
         </label>
         <label id="sportWrap" hidden>Sport

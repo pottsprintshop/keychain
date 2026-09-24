@@ -50,13 +50,13 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
 - **Base shape** (above the preview) — *Follow the text* or a plate that fills the whole width × height
   you set: *Rectangle* (with a corner radius), *Round / oval* (a circle when width = height), *Hexagon*
   (points left and right, corners rounded by the same radius), *Dog bone* (a shaft with two knobs at
-  each end; *Shaft thickness* sets how much room the text gets) or *Sports tag* (see below). On a plate
-  the text is scaled to the biggest size that keeps the full outline + base margin inside the shape,
-  and the key hole slides along the shape's edge. **Border** adds a raised rim of that width around
-  the edge of the base (tab included), as tall as the layer above the base and colored like it; it is
-  its own body in the exports. The dog bone starts with the key hole in the middle of its top edge,
-  between the knobs, and a 0.8 mm border. Picking another shape moves these to that shape's usual
-  values unless you've changed them yourself.
+  each end; *Shaft thickness* sets how much room the text gets), *Sports tag* or *Name plate* (see
+  below for both). On a plate the text is scaled to the biggest size that keeps the full outline + base
+  margin inside the shape, and the key hole slides along the shape's edge. **Border** adds a raised rim
+  of that width around the edge of the base (tab included), as tall as the layer above the base and
+  colored like it; it is its own body in the exports. The dog bone starts with the key hole in the
+  middle of its top edge, between the knobs, and a 0.8 mm border. Picking another shape moves these to
+  that shape's usual values unless you've changed them yourself.
 - **Sports tag** — a long, thin rectangle (4 × 0.75 in, key hole tab included) with a 0.8 mm border,
   meant for a last name and a sport icon: tennis racquet, baseball, football or soccer ball, drawn
   beside the text and as tall as it. An optional **Number** (a jersey number, up to six characters)
@@ -65,6 +65,13 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   tall). The tag is set in **Impact**, which is bundled (`fonts/Impact.ttf`, supplied by the shop owner, who
   handles its license; see `fonts/README.md`). Picking the tag switches to it, and a Sports link that names
   no font uses it too.
+- **Name plate** — a wide plate (8 × 2 in, no key ring by default — turn the hole back on under
+  *Advanced* if you want one) set in **Kabel**, which is bundled (`fonts/Kabel.ttf`; see `fonts/README.md`).
+  Text size starts at 75%, landing each line around 18 mm tall. Upload artwork (Artwork panel) and it
+  becomes a logo pinned to the right edge: about 40 mm tall and 12.7 mm (0.5 in) in from the edge,
+  vertically centered, and it shrinks on its own to clear the text and the plate's own edge if it's a
+  different shape than that — no manual resizing needed. The logo is unioned into the text layer (and
+  so shares its color and the outline ring around it), the same way the Sports tag's icon does.
 - **Key hole** — diameter, edge distance, gap to the outline, and quick Left / Top / Right / Bottom
   buttons. Under *Nerd Shite*: 20% / 50% / 80% height buttons, an *Around the edge* slider that slides
   it smoothly all the way around the keychain (180° = centered on the left), and *Sticks out* to pull

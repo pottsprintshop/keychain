@@ -38,9 +38,15 @@ function num(input, fallback, min = 0) {
   return Number.isFinite(v) && v >= min ? v : fallback;
 }
 
+// The Name plate's logo: an initial ~40 mm tall, 12.7 mm (0.5") in from the right edge. It auto-resizes (shrinks)
+// to stay clear of the text and the plate's own edge, so a differently-shaped logo just fits.
+const NAMEPLATE_LOGO_MM = 40;
+const NAMEPLATE_INSET_MM = 12.7;
+
 function readParams() {
   const k = el.unit.value === 'in' ? MM_PER_IN : 1;
   const icon = el.baseShape.value === 'sports' ? getIcon(el.sportIcon.value) : null;
+  const nameplate = el.baseShape.value === 'nameplate';
   return {
     text: el.text.value,
     align: el.align.value,
@@ -86,9 +92,12 @@ function readParams() {
     qrText: el.qrText.value,
     qrEcc: el.qrEcc.value,
     qrPlate: el.qrPlate.checked,
-    // The Sports tag puts its icon beside the text (as tall as the text); otherwise it's the uploaded artwork.
+    // The Sports tag puts its icon beside the text (as tall as the text). The Name plate pins the uploaded logo to
+    // the right edge at a real mm size. Otherwise the uploaded artwork goes where the Artwork panel says.
     ...(icon
       ? { art: icon, artMode: 'right', artLines: 1, artShiftX: 0, artShiftY: 0 }
+      : nameplate && art
+      ? { art, artMode: 'right', artSizeMM: NAMEPLATE_LOGO_MM, artInsetMM: NAMEPLATE_INSET_MM }
       : {
           art,
           artMode: el.artMode.value,
@@ -166,10 +175,17 @@ function syncLabels() {
   el.backArtNote.hidden = kind !== 'art';
   syncLayers();
   // The corner radius is for the rectangle and hexagon; the shaft thickness for the dog bone.
-  el.plateRadiusWrap.hidden = !['plate', 'hex', 'sports'].includes(el.baseShape.value);
+  el.plateRadiusWrap.hidden = !['plate', 'hex', 'sports', 'nameplate'].includes(el.baseShape.value);
   el.sportWrap.hidden = el.sportNumberWrap.hidden = el.baseShape.value !== 'sports';
-  el.impactHint.hidden = !(el.baseShape.value === 'sports' && !currentFontIsImpact());
+  const wantFont = SHAPE_FONT[el.baseShape.value];
+  el.impactText.textContent = `This shape is meant for ${wantFont}.`;
+  el.useImpact.textContent = `Use ${wantFont}`;
+  el.impactHint.hidden = !(wantFont && !currentFontIsNamed(wantFont));
   el.boneShaftWrap.hidden = el.baseShape.value !== 'dogbone';
+  // The Name plate pins the uploaded logo to the right edge itself — the usual placement controls don't apply.
+  const nameplateArt = el.baseShape.value === 'nameplate';
+  if (el.artPlaceFields) el.artPlaceFields.hidden = nameplateArt;
+  if (el.artAutoHint) el.artAutoHint.hidden = !nameplateArt;
 }
 
 // ---- Layers: the plus and minus buttons -------------------------------------------
@@ -424,9 +440,11 @@ function enableLineDragging() {
 const SHAPE_DEFAULTS = {
   dogbone: { holeAngle: 90, borderW: 0.8 },
   sports: { width: 101.6, height: 19.05, text: 'Deutsch', borderW: 0.8 }, // 4 x 0.75 in, with a 0.8 mm rim
+  nameplate: { width: 203.8, height: 50.8, text: 'Pepper\nPotts', baseH: 1, textSize: 75 }, // 8 x 2 in, 1 mm thick, ~18 mm lines
 };
-const SHAPE_KEYED = ['holeAngle', 'borderW']; // plain numeric controls
-const shapeDefault = (shape, key) => SHAPE_DEFAULTS[shape]?.[key] ?? DEFAULTS[key];
+const SHAPE_KEYED = ['holeAngle', 'borderW', 'baseH', 'textSize']; // plain numeric controls
+// textSize's slider is a percent (0-100); DEFAULTS keeps it as a 0-1 fraction, so its plain fallback needs converting.
+const shapeDefault = (shape, key) => SHAPE_DEFAULTS[shape]?.[key] ?? (key === 'textSize' ? DEFAULTS.textSize * 100 : DEFAULTS[key]);
 const sizeFor = (shape) => [shapeDefault(shape, 'width'), shapeDefault(shape, 'height')]; // mm
 const unitMM = () => (el.unit.value === 'in' ? MM_PER_IN : 1);
 const sizeIs = (mm) => Math.abs(Number(el.width.value) * unitMM() - mm[0]) < 0.06 && Math.abs(Number(el.height.value) * unitMM() - mm[1]) < 0.06;
@@ -445,34 +463,46 @@ el.baseShape.addEventListener('change', () => {
     el.text.value = shapeDefault(shape, 'text');
     renderLineShifts();
   }
+  // Name plates aren't keychains \u2014 no key ring hole by default (the box remembers if you'd already turned it off).
+  if (shape === 'nameplate' && prevShape !== 'nameplate' && el.holeEnabled.checked) el.holeEnabled.checked = false;
+  else if (prevShape === 'nameplate' && shape !== 'nameplate' && !el.holeEnabled.checked) el.holeEnabled.checked = true;
   prevShape = shape;
-  if (shape === 'sports') useImpact().then(() => schedule());
+  if (SHAPE_FONT[shape]) useFontNamed(SHAPE_FONT[shape]).then(() => schedule());
   schedule();
 });
 
-// ---- Impact, for the Sports tag ---------------------------------------------------------
-// Impact ships with the page (fonts/Impact.ttf). If that file is ever taken out, desktop Chrome and Edge can still read
-// Impact from the computer (the browser asks first), and anywhere else Upload font... does the same.
+// ---- Bundled fonts a shape wants: Impact for the Sports tag, Kabel for the Name plate -------------------------
+// Both ship with the page (fonts/Impact.ttf, fonts/Kabel.ttf). If a file is ever taken out, desktop Chrome and
+// Edge can still read the font from the computer (the browser asks first), and anywhere else Upload font... does
+// the same.
 
-const isImpact = (font) => /^impact\b/i.test(fontDisplayName(font));
+const SHAPE_FONT = { sports: 'Impact', nameplate: 'Kabel' };
+
+const fontStartsWith = (name, font) => new RegExp(`^${name}\\b`, 'i').test(fontDisplayName(font));
+const isImpact = (font) => fontStartsWith('Impact', font);
 const currentFontIsImpact = () => {
   const entry = fonts.get(el.font.value);
   return !!entry && isImpact(entry.font);
 };
+const currentFontIsNamed = (name) => {
+  const entry = fonts.get(el.font.value);
+  return !!entry && fontStartsWith(name, entry.font);
+};
 
-async function useImpact() {
-  let hit = [...fonts].find(([, v]) => isImpact(v.font));
-  let why = 'The Sports tag is meant for Impact, which this page can only read from your computer.';
+async function useFontNamed(name) {
+  let hit = [...fonts].find(([, v]) => fontStartsWith(name, v.font));
+  let why = `This shape is meant for ${name}, which this page can only read from your computer.`;
   if (!hit && typeof window.queryLocalFonts === 'function') {
     try {
-      const found = (await window.queryLocalFonts({ postscriptNames: ['Impact'] })).find((f) => /^impact/i.test(f.family) || /^impact/i.test(f.fullName));
+      const re = new RegExp(`^${name}`, 'i');
+      const found = (await window.queryLocalFonts({ postscriptNames: [name] })).find((f) => re.test(f.family) || re.test(f.fullName));
       if (found) {
         const font = parseFont(await (await found.blob()).arrayBuffer());
         const value = 'l:' + fonts.size;
-        addFontOption(value, 'Impact (this computer)', font);
+        addFontOption(value, `${name} (this computer)`, font);
         hit = [value];
       } else {
-        why = "This computer doesn't seem to have Impact, or the browser wouldn't share it. ";
+        why = `This computer doesn't seem to have ${name}, or the browser wouldn't share it. `;
       }
     } catch (err) {
       console.info('Could not read installed fonts:', err);
@@ -484,12 +514,12 @@ async function useImpact() {
   if (hit) {
     el.font.value = hit[0];
   } else {
-    el.impactText.textContent = why + 'Use Upload font\u2026 and pick Impact (on a Mac it is /System/Library/Fonts/Supplemental/Impact.ttf).';
+    el.impactText.textContent = `${why}Use Upload font\u2026 and pick ${name}.`;
   }
   syncLabels();
   return !!hit;
 }
-el.useImpact.addEventListener('click', () => useImpact().then(() => schedule()));
+el.useImpact.addEventListener('click', () => useFontNamed(SHAPE_FONT[el.baseShape.value] || 'Impact').then(() => schedule()));
 
 for (const b of el.holeQuick.children) {
   b.addEventListener('click', () => {
@@ -592,8 +622,11 @@ function designQuery() {
   if (entry && !/^[ul]:/.test(el.font.value) && entry !== first) values.font = entry.name;
   if (lineShifts.some(Boolean)) values.lineShifts = csv(lineShifts);
   if (lineShiftsY.some(Boolean)) values.lineShiftsY = csv(lineShiftsY);
-  // A shape whose usual hole spot or border isn't the default (the dog bone's) always spells them out, so its links keep them.
-  for (const key of SHAPE_KEYED) if (shapeDefault(el.baseShape.value, key) !== DEFAULTS[key]) values[key] = el[key].value;
+  // A shape whose usual hole spot, border, height or text size isn't the plain default always spells it out, so its links keep it.
+  for (const key of SHAPE_KEYED) {
+    const plain = key === 'textSize' ? DEFAULTS.textSize * 100 : DEFAULTS[key];
+    if (shapeDefault(el.baseShape.value, key) !== plain) values[key] = el[key].value;
+  }
   return toQuery(values);
 }
 
@@ -616,13 +649,14 @@ function applyFromUrl() {
     for (const key of SHAPE_KEYED) if (!(key in controls)) el[key].value = String(shapeDefault(shape, key));
     if (!('width' in controls) && !('height' in controls)) setSize(sizeFor(shape));
     if (!('text' in controls)) el.text.value = shapeDefault(shape, 'text');
+    if (shape === 'nameplate' && !('holeEnabled' in controls)) el.holeEnabled.checked = false;
   }
   if (font) {
     const opt = [...el.font.options].find((o) => o.textContent === font);
     if (opt) el.font.value = opt.value;
-  } else if (controls.baseShape === 'sports') {
-    const impact = [...fonts].find(([, v]) => isImpact(v.font)); // (a Sports link that names no font uses Impact)
-    if (impact) el.font.value = impact[0];
+  } else if (SHAPE_FONT[controls.baseShape]) {
+    const want = [...fonts].find(([, v]) => fontStartsWith(SHAPE_FONT[controls.baseShape], v.font)); // (a link that names no font uses the shape's own)
+    if (want) el.font.value = want[0];
   }
   const list = (s) => String(s || '').split(',').map(Number).filter(Number.isFinite);
   lineShifts = list(ls);

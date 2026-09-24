@@ -70,7 +70,9 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   Text size starts at 75%, landing each line around 18 mm tall. Upload artwork (Artwork panel) and it
   becomes a logo pinned to the right edge: about 40 mm tall and 12.7 mm (0.5 in) in from the edge,
   vertically centered, and it shrinks on its own to clear the text and the plate's own edge if it's a
-  different shape than that — no manual resizing needed. The logo is unioned into the text layer (and
+  different shape than that — no manual resizing needed. The text is also fitted a little narrower and
+  shifted clear of the logo's side on its own, rather than sitting dead centre and fighting it for the
+  same space (the per-line left/right sliders still nudge it further from there). The logo is unioned into the text layer (and
   so shares its color and the outline ring around it), the same way the Sports tag's icon does.
 - **Key hole** — diameter, edge distance, gap to the outline, and quick Left / Top / Right / Bottom
   buttons. Under *Nerd Shite*: 20% / 50% / 80% height buttons, an *Around the edge* slider that slides

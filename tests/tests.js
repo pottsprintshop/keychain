@@ -548,17 +548,24 @@ test('the Name plate: 8 x 2 in, 1 mm thick, no key ring by default, and a logo p
   near(withLogo.size.w / 2 - x1, 12.7, 1, 'the logo sits about 12.7 mm from the right edge');
   near((y0 + y1) / 2, 0, 2, 'roughly centred top to bottom');
 
-  // A too-wide logo shrinks to stay on the plate, clear of the text, instead of overflowing. Text and logo don't
-  // touch, so they stay separate polygons in the union — pick out the logo's own by where it sits.
+  // A too-wide logo shrinks (and the text is fitted a bit narrower and biased away from it) to keep both on the
+  // plate without touching, instead of the logo overflowing or the two overlapping. The synthetic logo is a plain
+  // 4-cornered rectangle — unlike any Kabel letter — so it's easy to pick back out of the union.
   const wide = build(f, { ...over, art: rectArt(6), artMode: 'right', artSizeMM: 40, artInsetMM: 12.7 });
   assert(wide.warnings.length === 0, wide.warnings.join(' | '));
-  const plainInk = plain.layers.find((l) => l.key === 'text').polys;
-  const textX1 = Math.max(...plainInk.flatMap((p) => p.outer.map(([x]) => x)));
   const wideInk = wide.layers.find((l) => l.key === 'text').polys;
-  const logoPolys = wideInk.filter((p) => p.outer.every(([x]) => x > textX1));
-  assert(logoPolys.length > 0, 'the logo is still there, apart from the text');
-  const wx1 = Math.max(...logoPolys.flatMap((p) => p.outer.map(([x]) => x)));
-  assert(wx1 <= wide.size.w / 2 + 0.01, `a wide logo still stays on the plate (reaches ${wx1.toFixed(1)} of ${(wide.size.w / 2).toFixed(1)})`);
+  const bbox = (p) => { let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; for (const [x, y] of p.outer) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } return { x0, x1, y0, y1 }; };
+  const logoPolys = wideInk.filter((p) => p.outer.length === 4 && !p.holes.length);
+  assert(logoPolys.length === 1, `exactly one rectangle (the logo) among the text, got ${logoPolys.length}`);
+  const logoBox = bbox(logoPolys[0]);
+  assert(logoBox.x1 <= wide.size.w / 2 + 0.01, `a wide logo still stays on the plate (reaches ${logoBox.x1.toFixed(1)} of ${(wide.size.w / 2).toFixed(1)})`);
+  // No letter's box overlaps the logo's box — separated on at least one axis.
+  for (const p of wideInk) {
+    if (p === logoPolys[0]) continue;
+    const b = bbox(p);
+    const clear = b.x1 < logoBox.x0 || b.x0 > logoBox.x1 || b.y1 < logoBox.y0 || b.y0 > logoBox.y1;
+    assert(clear, `a letter (${JSON.stringify(b)}) overlaps the shrunk logo (${JSON.stringify(logoBox)})`);
+  }
 
   for (const m of [plain, withLogo, wide]) {
     for (const file of stlFilesFromModel(m, 'n')) {

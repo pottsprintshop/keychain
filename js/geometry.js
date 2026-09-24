@@ -266,6 +266,23 @@ export function buildKeychain(font, params) {
   if (p.art && p.artMode !== 'off' && !edgeArt) raw = raw.concat(placeArt(p.art, raw, p));
   if (!raw.length) return null;
 
+  // A logo pinned to the plate's edge reserves a column on that side, so the text is fitted a little narrower and
+  // shifted away from it, instead of always sitting dead centre and fighting the logo for the same space (which is
+  // why text couldn't be nudged clear of it before). Sized from the plate alone (not the exact fitted text) — the
+  // logo's own placement below refines this once the text's real position is known.
+  let edgeSide = 1, edgeReservedMM = 0, edgeBiasMM = 0;
+  if (edgeArt) {
+    edgeSide = p.artMode === 'left' ? -1 : 1;
+    const hw0 = p.width / 2, hh0 = p.height / 2;
+    const gap0 = 3; // mm, minimum clearance kept between the logo and the text
+    const roomH0 = Math.max(4, 2 * hh0 - 2 * Math.min(gap0, hh0 - 2));
+    const logoW0 = p.art.aspect * Math.min(p.artSizeMM, roomH0);
+    // Never reserve more than about half the plate for the logo, however wide its aspect — an extreme one just
+    // gets shrunk further once the real fit (and so the real room left for it) is known, below.
+    edgeReservedMM = Math.min(2 * hw0 - 8, hw0, p.artInsetMM + logoW0 + gap0);
+    edgeBiasMM = (-edgeSide * edgeReservedMM) / 2;
+  }
+
   const warnings = [];
   const rings = ringDefs(p);
   const M = (rings.at(-1)?.offset ?? 0) + (hasBase ? p.baseMargin : 0); // how far the outside of the keychain is from the text
@@ -314,8 +331,8 @@ export function buildKeychain(font, params) {
     const { hw, hh } = shapeBox;
     const stretch = p.fit === 'stretch';
     if (p.baseShape === 'plate' || p.baseShape === 'sports' || p.baseShape === 'nameplate') {
-      // A rectangle: the text box is the plate pulled in by M.
-      const iw = Math.max(0, 2 * (hw - M)), ih = Math.max(0, 2 * (hh - M));
+      // A rectangle: the text box is the plate pulled in by M, minus the logo's reserved column if there is one.
+      const iw = Math.max(0, 2 * (hw - M) - edgeReservedMM), ih = Math.max(0, 2 * (hh - M));
       const s = Math.min(iw / ink.w, ih / ink.h);
       return stretch ? [iw / ink.w, ih / ink.h] : [s, s];
     }
@@ -392,18 +409,20 @@ export function buildKeychain(font, params) {
   // to fit the room to the side of the text (never past the plate's own edge) rather than overflowing.
   if (edgeArt) {
     const { hw, hh } = halfBox(sx, sy);
-    const side = p.artMode === 'left' ? -1 : 1;
-    const textEdge = (ink.w * sx) / 2; // how far the (centred) text reaches either way, in mm from the plate centre
+    const side = edgeSide;
     const gap = 3; // mm, minimum clearance kept between the logo and the text
+    // How far the text's own edge (already biased away from the logo's side) reaches toward that side, in mm
+    // from the plate centre.
+    const textEdge = (ink.w * sx) / 2 + side * edgeBiasMM;
     const roomW = Math.max(4, hw - p.artInsetMM - (textEdge + gap));
     const roomH = Math.max(4, 2 * hh - 2 * Math.min(gap, hh - 2)); // a little clearance top and bottom, not tied to the edge inset
     const heightMM = Math.min(p.artSizeMM, roomH, roomW / p.art.aspect);
     const s = heightMM / sy; // nominal height that comes out to heightMM once scaled
     const halfWmm = (p.art.aspect * heightMM) / 2;
     // The plate is symmetric (and centred on the origin), so a point this far from the text's own centre lands
-    // this far from the plate's centre in mm once the whole design is centred — true as long as the key hole
-    // (if any) doesn't push the design off-centre, which is the common case for a Name plate.
-    const cx = (side * (hw - p.artInsetMM - halfWmm)) / sx + ink.cx;
+    // this far from the plate's centre in mm once the whole design is centred (text bias included) — true as long
+    // as the key hole (if any) doesn't push the design off-centre, which is the common case for a Name plate.
+    const cx = (side * (hw - p.artInsetMM - halfWmm) - edgeBiasMM) / sx + ink.cx;
     const base = ink.cy - s / 2;
     const P = (x, y) => [cx + x * s, base + y * s];
     raw = raw.concat(p.art.contours.map((c) => ({
@@ -416,7 +435,7 @@ export function buildKeychain(font, params) {
   // Final placement with the fine-flattened outlines.
   const centered = p.fixed
     ? transformContours(raw, sx, sy, p.fixed.tx - p.fixed.shx, p.fixed.ty - p.fixed.shy)
-    : transformContours(raw, sx, sy, -ink.cx * sx, -ink.cy * sy);
+    : transformContours(raw, sx, sy, -ink.cx * sx + edgeBiasMM, -ink.cy * sy);
   let fine = centered.map((c) => flattenContour(c, FLATTEN_TOL));
   let hole = p.holeEnabled ? placeHole(fine, p, plateFor(sx, sy), p.fixed ? [0, 0] : null) : null;
   const ref = sizing(sx, sy, hole);
@@ -571,7 +590,7 @@ export function buildKeychain(font, params) {
     }
   }
   const half = halfBox(sx, sy);
-  const layout = p.fixed || { sx, sy, tx: -ink.cx * sx + shx, ty: -ink.cy * sy + shy, shx, shy, hw: half.hw, hh: half.hh, widest: widestLine(font, text) };
+  const layout = p.fixed || { sx, sy, tx: -ink.cx * sx + edgeBiasMM + shx, ty: -ink.cy * sy + shy, shx, shy, hw: half.hw, hh: half.hh, widest: widestLine(font, text) };
 
   return {
     params: p,

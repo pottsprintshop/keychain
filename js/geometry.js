@@ -69,12 +69,16 @@ export const DEFAULTS = {
   artLines: 2, // artwork height, in font sizes
   artShiftX: 0, // nudge, % of the font size
   artShiftY: 0,
+  // The Name plate's logo: a real mm height and a real mm gap from the plate's edge (on the `artMode` side),
+  // instead of sizing relative to the text. 0 = off (use artLines/artShiftX/Y like any other artwork).
+  artSizeMM: 0,
+  artInsetMM: 0,
 };
 
 // ---- Base shapes -------------------------------------------------------------
 
 // Bases that fill the requested width x height (everything except 'text', which follows the letters).
-export const PLATE_SHAPES = ['plate', 'sports', 'round', 'hex', 'dogbone'];
+export const PLATE_SHAPES = ['plate', 'sports', 'round', 'hex', 'dogbone', 'nameplate'];
 
 function ellipsePoints(a, b, tol = 0.004) {
   const R = Math.max(a, b);
@@ -253,10 +257,13 @@ export function buildKeychain(font, params) {
   // Without a base there is nothing to bore a key hole in, recess a back into, or put a border on.
   const hasBase = p.baseOn !== false;
   if (!hasBase) Object.assign(p, { holeEnabled: false, backKind: 'none', borderW: 0 });
-  // The front: the text, and/or the artwork placed above, below or instead of it.
+  // The front: the text, and/or the artwork placed above, below or instead of it. A logo pinned to the edge of a
+  // plate (the Name plate's `artSizeMM`) is added later, once the plate's real mm size is known — it keeps its own
+  // size and position in mm, independent of how the text is scaled to fit.
   const text = tagText(font, p);
-  let raw = p.art && p.artMode === 'only' ? [] : layoutText(font, text, p);
-  if (p.art && p.artMode !== 'off') raw = raw.concat(placeArt(p.art, raw, p));
+  const edgeArt = p.art && p.artMode !== 'off' && p.artSizeMM > 0;
+  let raw = p.art && p.artMode === 'only' && !edgeArt ? [] : layoutText(font, text, p);
+  if (p.art && p.artMode !== 'off' && !edgeArt) raw = raw.concat(placeArt(p.art, raw, p));
   if (!raw.length) return null;
 
   const warnings = [];
@@ -306,7 +313,7 @@ export function buildKeychain(font, params) {
   const fitInShape = () => {
     const { hw, hh } = shapeBox;
     const stretch = p.fit === 'stretch';
-    if (p.baseShape === 'plate' || p.baseShape === 'sports') {
+    if (p.baseShape === 'plate' || p.baseShape === 'sports' || p.baseShape === 'nameplate') {
       // A rectangle: the text box is the plate pulled in by M.
       const iw = Math.max(0, 2 * (hw - M)), ih = Math.max(0, 2 * (hh - M));
       const s = Math.min(iw / ink.w, ih / ink.h);
@@ -378,6 +385,32 @@ export function buildKeychain(font, params) {
   const emMM = NOMINAL * Math.min(sx, sy);
   if (emMM < 4) {
     warnings.push(`The text is only about ${emMM.toFixed(1)} mm tall — make the keychain bigger or the outline and base thinner.`);
+  }
+
+  // A logo pinned to the plate's edge (Name plate): sized in real mm, not relative to the text, so it doesn't
+  // shrink or grow when the text does. It auto-resizes to stay on the plate — a wide or tall logo is scaled down
+  // to fit the room to the side of the text (never past the plate's own edge) rather than overflowing.
+  if (edgeArt) {
+    const { hw, hh } = halfBox(sx, sy);
+    const side = p.artMode === 'left' ? -1 : 1;
+    const textEdge = (ink.w * sx) / 2; // how far the (centred) text reaches either way, in mm from the plate centre
+    const gap = 3; // mm, minimum clearance kept between the logo and the text
+    const roomW = Math.max(4, hw - p.artInsetMM - (textEdge + gap));
+    const roomH = Math.max(4, 2 * hh - 2 * Math.min(gap, hh - 2)); // a little clearance top and bottom, not tied to the edge inset
+    const heightMM = Math.min(p.artSizeMM, roomH, roomW / p.art.aspect);
+    const s = heightMM / sy; // nominal height that comes out to heightMM once scaled
+    const halfWmm = (p.art.aspect * heightMM) / 2;
+    // The plate is symmetric (and centred on the origin), so a point this far from the text's own centre lands
+    // this far from the plate's centre in mm once the whole design is centred — true as long as the key hole
+    // (if any) doesn't push the design off-centre, which is the common case for a Name plate.
+    const cx = (side * (hw - p.artInsetMM - halfWmm)) / sx + ink.cx;
+    const base = ink.cy - s / 2;
+    const P = (x, y) => [cx + x * s, base + y * s];
+    raw = raw.concat(p.art.contours.map((c) => ({
+      line: -1,
+      start: P(...c.start),
+      segs: c.segs.map((seg) => (seg[0] === 'Q' ? ['Q', ...P(seg[1], seg[2]), ...P(seg[3], seg[4])] : ['L', ...P(seg[1], seg[2])])),
+    })));
   }
 
   // Final placement with the fine-flattened outlines.

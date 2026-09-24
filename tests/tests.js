@@ -523,6 +523,52 @@ test('the Sports tag: 0.75 in high with a border, and an optional number after t
   assert(numbered.scale.x < plain.scale.x, 'the name gets a little smaller to make room');
 });
 
+// A simple rectangle, in the artwork format (see art.js): height 1, bottom at y = 0, centred on x = 0.
+const rectArt = (aspect) => ({ aspect, contours: [{ start: [-aspect / 2, 0], segs: [['L', aspect / 2, 0], ['L', aspect / 2, 1], ['L', -aspect / 2, 1]] }] });
+
+test('the Name plate: 8 x 2 in, 1 mm thick, no key ring by default, and a logo pinned near the right edge', () => {
+  const f = font(/Kabel/);
+  assert(f.getAdvanceWidth('Pepper', 100) > 100, 'Kabel loaded');
+  const over = { baseShape: 'nameplate', text: 'Pepper\nPotts', width: 203.8, height: 50.8, baseH: 1, textSize: 0.75, holeEnabled: false };
+  const plain = build(f, over);
+  near(plain.size.w, 203.8, 0.1, '8 in wide');
+  near(plain.size.h, 50.8, 0.1, '2 in tall');
+  assert(plain.warnings.length === 0, plain.warnings.join(' | '));
+
+  // The logo (~40 mm tall, ~12.7 mm from the right edge) shares the text layer — and so its color — rather than
+  // adding one of its own.
+  const withLogo = build(f, { ...over, art: rectArt(1), artMode: 'right', artSizeMM: 40, artInsetMM: 12.7 });
+  near(withLogo.size.w, 203.8, 0.1, 'still 8 in wide with the logo');
+  near(withLogo.size.h, 50.8, 0.1, 'still 2 in tall with the logo');
+  assert(withLogo.warnings.length === 0, withLogo.warnings.join(' | '));
+  assert(JSON.stringify(withLogo.layers.map((l) => l.key).sort()) === JSON.stringify(plain.layers.map((l) => l.key).sort()), 'the logo adds no layer of its own');
+  const ink = withLogo.layers.find((l) => l.key === 'text').polys;
+  let x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const p of ink) for (const [x, y] of p.outer) { x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  near(withLogo.size.w / 2 - x1, 12.7, 1, 'the logo sits about 12.7 mm from the right edge');
+  near((y0 + y1) / 2, 0, 2, 'roughly centred top to bottom');
+
+  // A too-wide logo shrinks to stay on the plate, clear of the text, instead of overflowing. Text and logo don't
+  // touch, so they stay separate polygons in the union — pick out the logo's own by where it sits.
+  const wide = build(f, { ...over, art: rectArt(6), artMode: 'right', artSizeMM: 40, artInsetMM: 12.7 });
+  assert(wide.warnings.length === 0, wide.warnings.join(' | '));
+  const plainInk = plain.layers.find((l) => l.key === 'text').polys;
+  const textX1 = Math.max(...plainInk.flatMap((p) => p.outer.map(([x]) => x)));
+  const wideInk = wide.layers.find((l) => l.key === 'text').polys;
+  const logoPolys = wideInk.filter((p) => p.outer.every(([x]) => x > textX1));
+  assert(logoPolys.length > 0, 'the logo is still there, apart from the text');
+  const wx1 = Math.max(...logoPolys.flatMap((p) => p.outer.map(([x]) => x)));
+  assert(wx1 <= wide.size.w / 2 + 0.01, `a wide logo still stays on the plate (reaches ${wx1.toFixed(1)} of ${(wide.size.w / 2).toFixed(1)})`);
+
+  for (const m of [plain, withLogo, wide]) {
+    for (const file of stlFilesFromModel(m, 'n')) {
+      const st = stlStats(file.data), exp = volumeOf(m, file.key);
+      assert(st.open === 0, `${file.key}: ${st.open} open edges`);
+      near(st.vol / exp, 1, 0.001, `${file.key} volume`);
+    }
+  }
+});
+
 test('the Sports tag in Impact (bundled): name, number and every icon fit the tag and print cleanly', () => {
   const f = font(/Impact/);
   assert(f.getAdvanceWidth('Deutsch', 100) > 200, 'Impact loaded');
@@ -818,6 +864,7 @@ test('STEP: dog bone base', () => stepCheck(build(font(/Carter/), { baseShape: '
 test('STEP: hexagon base with a QR code', () => stepCheck(build(font(/Carter/), { baseShape: 'hex', width: 60, height: 52, backKind: 'qr', qrText: 'https://x.co/a' }), 'hex+QR', { maxMB: 6 }), { step: true });
 test('STEP: sports tag with an icon', () => stepCheck(build(font(/Carter/), { baseShape: 'sports', text: 'Deutsch', width: 101.6, height: 25.4, art: getIcon('tennis'), artMode: 'right', artLines: 1 }), 'sports', { maxMB: 5, exactText: true }), { step: true });
 test('STEP: sports tag in Impact', () => stepCheck(build(font(/Impact/), { baseShape: 'sports', text: 'Deutsch', sportNumber: '12', width: 101.6, height: 19.05, borderW: 0.8, art: getIcon('soccer'), artMode: 'right', artLines: 1 }), 'sports-impact', { maxMB: 6, exactText: true }), { step: true });
+test('STEP: Name plate in Kabel, with a logo', () => stepCheck(build(font(/Kabel/), { baseShape: 'nameplate', text: 'Pepper\nPotts', width: 203.8, height: 50.8, baseH: 1, textSize: 0.75, holeEnabled: false, art: getIcon('tennis'), artMode: 'right', artSizeMM: 40, artInsetMM: 12.7 }), 'nameplate', { maxMB: 10, exactText: true }), { step: true });
 test('STEP: lines dragged together (overlapping glyphs) keep exact text', () => stepCheck(build(font(/Carter/), { lineShiftsY: [0, 35] }), 'overlap', { maxMB: 4, exactText: true }), { step: true });
 
 // ---- runner ----------------------------------------------------------------------------------------

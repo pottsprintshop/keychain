@@ -6,6 +6,7 @@
 | `LEMONMILK-Bold.otf`, `LEMONMILK-Medium.otf` | Lemon Milk | see the font's own license |
 | `PottsGraffiti-Regular.ttf` | Potts Graffiti | Potts Print Shop |
 | `Impact.ttf` | Impact, version 2.35 | Monotype Typography, Inc. |
+| `Kabel.ttf` | Kabel Book | Fantazia Fonts and Sounds (A. Carr) |
 
 ## Impact
 
@@ -21,3 +22,13 @@ license notice reads:
 
 To take it out, delete `Impact.ttf` and its line in `fonts.json`. The Sports tag then asks the visitor's own computer for
 Impact (Chrome and Edge) or takes an upload.
+
+## Kabel
+
+`Kabel.ttf` is the shop owner's copy, used for the Name plate. The font's own embedded name-table notice reads:
+
+> Freeware! From A. Carr. Remember to vote! If you don't vote, you can't bitch!
+
+("Kabel" is also a historic Koch typeface name; this is a particular freeware digitization of it, from Fantazia Fonts and
+Sounds, not a Monotype/Linotype release.) To take it out, delete `Kabel.ttf` and its line in `fonts.json`; the Name plate
+then asks the visitor's own computer for Kabel or takes an upload.

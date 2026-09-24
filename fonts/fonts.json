@@ -3,5 +3,6 @@
   { "name": "Lemon Milk Bold", "file": "LEMONMILK-Bold.otf" },
   { "name": "Lemon Milk Medium", "file": "LEMONMILK-Medium.otf" },
   { "name": "Potts Graffiti", "file": "PottsGraffiti-Regular.ttf" },
-  { "name": "Impact", "file": "Impact.ttf" }
+  { "name": "Impact", "file": "Impact.ttf" },
+  { "name": "Kabel", "file": "Kabel.ttf" }
 ]

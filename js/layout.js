@@ -60,29 +60,31 @@ function pathWithShifts(font, line, x0, shifts, size) {
 }
 
 // Advance width of the widest line, in nominal units (the unit the sideways offsets are relative to).
-export function widestLine(font, text) {
+// lineFonts[i], if set, is that line's own font in place of `font` (the Advanced "font per line" setting).
+export function widestLine(font, text, lineFonts = []) {
   const lines = String(text).replace(/\r/g, '').split('\n');
-  return Math.max(1, ...lines.map((l) => (l.trim() ? font.getAdvanceWidth(l, NOMINAL) : 0)));
+  return Math.max(1, ...lines.map((l, i) => (l.trim() ? (lineFonts[i] || font).getAdvanceWidth(l, NOMINAL) : 0)));
 }
 
 // Lay out `text` (newlines split lines) and return unscaled contours, each tagged with its line number.
 // lineShifts[i] nudges line i sideways (percent of the widest line); lineShiftsY[i] nudges it up
-// (percent of the font size).
-export function layoutText(font, text, { align = 'center', lineSpacing = 1, lineShifts = [], lineShiftsY = [] } = {}) {
+// (percent of the font size); lineFonts[i] swaps that line to its own font (see widestLine above).
+export function layoutText(font, text, { align = 'center', lineSpacing = 1, lineShifts = [], lineShiftsY = [], lineFonts = [] } = {}) {
   const lines = String(text).replace(/\r/g, '').split('\n');
   const lineHeight = NOMINAL * lineSpacing;
   const contours = [];
-  const widest = widestLine(font, text);
-  const fixes = pairFixesFor(font);
+  const widest = widestLine(font, text, lineFonts);
 
   lines.forEach((line, i) => {
     if (!line.trim()) return;
-    const fixed = fixes.length ? glyphShifts(font, line, fixes) : null;
-    const width = font.getAdvanceWidth(line, NOMINAL) + (fixed ? fixed.carry * NOMINAL : 0); // (a tucked letter shortens the line)
+    const f = lineFonts[i] || font;
+    const fixes = pairFixesFor(f);
+    const fixed = fixes.length ? glyphShifts(f, line, fixes) : null;
+    const width = f.getAdvanceWidth(line, NOMINAL) + (fixed ? fixed.carry * NOMINAL : 0); // (a tucked letter shortens the line)
     const shift = ((Number(lineShifts[i]) || 0) / 100) * widest;
     const x0 = (align === 'left' ? 0 : align === 'right' ? -width : -width / 2) + shift;
     const baseline = -i * lineHeight + ((Number(lineShiftsY[i]) || 0) / 100) * NOMINAL;
-    const path = fixed && fixed.any ? pathWithShifts(font, line, x0, fixed.shifts, NOMINAL) : font.getPath(line, x0, 0, NOMINAL);
+    const path = fixed && fixed.any ? pathWithShifts(f, line, x0, fixed.shifts, NOMINAL) : f.getPath(line, x0, 0, NOMINAL);
 
     // opentype paths are y-down with the baseline at y = 0; flip to y-up.
     const X = (x) => x;

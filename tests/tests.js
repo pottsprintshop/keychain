@@ -606,6 +606,25 @@ test('line offsets move a line relative to the others; a frozen layout rebuilds 
   near(frozen.exact.hole.cx, m0.exact.hole.cx, 1e-6, 'frozen hole position');
 });
 
+test('Advanced: a line can use its own font, in place of the main one', () => {
+  const carter = font(/Carter/), impact = font(/Impact/);
+  // At the layout level (nominal units, before any fit/scale), only the overridden line's ink should change.
+  const all = layoutText(carter, 'Hello\nWorld', {});
+  const mixed = layoutText(carter, 'Hello\nWorld', { lineFonts: [null, impact] });
+  const widthOf = (contours, line) => bboxOfPolylines(contours.filter((c) => c.line === line).map((c) => flattenContour(c, 0.05))).w;
+  near(widthOf(mixed, 0), widthOf(all, 0), 1e-6, "line 1's ink is untouched");
+  assert(Math.abs(widthOf(mixed, 1) - widthOf(all, 1)) > 2, `Impact's "World" (${widthOf(mixed, 1).toFixed(1)}) should differ from Carter One's (${widthOf(all, 1).toFixed(1)})`);
+
+  // It also builds cleanly end to end, into a watertight model.
+  const built = build(carter, { text: 'Hello\nWorld', lineFonts: [null, impact] });
+  assert(built.warnings.length === 0, built.warnings.join(' | '));
+  for (const file of stlFilesFromModel(built, 'mix')) {
+    const st = stlStats(file.data), exp = volumeOf(built, file.key);
+    assert(st.open === 0, `${file.key}: ${st.open} open edges`);
+    near(st.vol / exp, 1, 0.001, `${file.key} volume`);
+  }
+});
+
 test('the back content stays inside the edge margin, centred, and grows smoothly', () => {
   const f = font(/Carter/);
   for (const kind of ['qr', 'text']) {

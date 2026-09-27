@@ -241,9 +241,10 @@ function build(model, colors, progress) {
   if (base) progress('Building the base\u2026');
   if (base) {
     const baseVolume = baseParts.reduce((t, l) => t + netArea(l.polys) * (l.z1 - l.z0), 0);
-    // With something recessed into its back the base is two slabs: a lower one with the pocket cut out, and the rest.
-    // Both start from the simplified outline (with the tab and fillets) and get the exact bore cut through them.
-    const slabs = backLayer
+    // With something recessed into its back (back content, a wall hanger, or both) the base is two slabs: a
+    // lower one with the pocket(s) cut out, and the rest. Both start from the simplified outline (with the tab
+    // and fillets) and get the exact bore cut through them.
+    const slabs = baseParts.length === 2
       ? [
           { polys: model.exact.baseLowerPlain, z0: baseParts[0].z0, z1: baseParts[0].z1 },
           { polys: basePlain, z0: baseParts[1].z0, z1: baseParts[1].z1 },

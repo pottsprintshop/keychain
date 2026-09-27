@@ -80,6 +80,12 @@ function readParams() {
     holeGap: num(el.holeGap, DEFAULTS.holeGap, 0),
     holeAngle: num(el.holeAngle, DEFAULTS.holeAngle, 0),
     holePush: num(el.holePush, 0, 0) / 100,
+    hangEnabled: el.hangEnabled.checked,
+    hangWidth: num(el.hangWidth, DEFAULTS.hangWidth, 5),
+    hangHeight: num(el.hangHeight, DEFAULTS.hangHeight, 3),
+    hangDepth: num(el.hangDepth, DEFAULTS.hangDepth, 0.2),
+    hangTeeth: num(el.hangTeeth, DEFAULTS.hangTeeth, 1),
+    hangMargin: num(el.hangMargin, DEFAULTS.hangMargin, 0),
     lineShifts: lineShifts.slice(),
     lineShiftsY: lineShiftsY.slice(),
     rings: Number(el.rings.value),
@@ -176,6 +182,7 @@ function syncLabels() {
   el.holeAngleNum.title = compass[Math.round(angle / 45) % 8]; // (hover: which way that points)
   for (const b of el.holeQuick.children) b.classList.toggle('active', Math.round(angle) === Number(b.dataset.angle));
   el.holeControls.style.opacity = el.holeEnabled.checked ? '1' : '0.45';
+  el.hangControls.style.opacity = el.hangEnabled.checked ? '1' : '0.45';
   // Show only the parts of the Back panel that apply, and only the rings that exist.
   const kind = el.backKind.value;
   el.backControls.hidden = kind === 'none';

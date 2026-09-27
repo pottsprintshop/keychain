@@ -92,11 +92,10 @@ export function stlFilesFromModel(model, name) {
     if (!groups.has(l.key)) groups.set(l.key, []);
     groups.get(l.key).push(l);
   }
-  const back = (groups.get('back') || groups.get('qr') || [])[0];
   return [...groups].map(([key, layers], i) => {
     const geometries =
-      key === 'base' && layers.length === 2 && back
-        ? [joinedBase(layers, back)]
+      key === 'base' && layers.length === 2 && model.baseCut
+        ? [joinedBase(layers, model.baseCut)]
         : layers.map((l) => layerGeometry(l.polys, l.z0, l.z1));
     const data = stlFromGeometries(geometries);
     geometries.forEach((g) => g.dispose());

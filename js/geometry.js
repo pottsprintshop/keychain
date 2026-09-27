@@ -65,6 +65,14 @@ export const DEFAULTS = {
   qrText: '',
   qrEcc: 'M', // error correction: L, M, Q or H
   qrPlate: false, // false: just the code's modules, in a color that contrasts with the base; true: modules on a plate
+  // Wall hanger: a sawtooth notch recessed into the back, near the top, for a nail — independent of the back
+  // content above (it's just an empty pocket, not a colored body), like the key hole is independent of the base shape.
+  hangEnabled: false,
+  hangWidth: 20, // mm
+  hangHeight: 10, // mm
+  hangDepth: 1.2, // how deep it is recessed into the base (mm)
+  hangTeeth: 4,
+  hangMargin: 3, // mm, gap kept between the notch and the top edge of the base
   art: null, // traced artwork ({ contours, aspect }), see art.js
   artMode: 'off', // on the front: 'off' | 'above' the text | 'below' it | 'right' or 'left' of it | 'only' (instead of the text)
   artLines: 2, // artwork height, in font sizes
@@ -119,6 +127,24 @@ export function shapeRing(kind, hw, hh, p) {
     return fromPath(outerPaths(unionTree(parts))[0]);
   }
   return plateRing(hw, hh, p.plateRadius);
+}
+
+// ---- Wall hanger --------------------------------------------------------------
+
+// A sawtooth notch (CCW polygon, mm): a shallow pocket with `teeth` V-shaped peaks along its top edge, for a nail
+// to catch in. `top` is the y the pocket's peaks reach up to; it extends down by `h` and is `w` wide, centred on `cx`.
+function sawtoothPoints(cx, top, w, h, teeth) {
+  const halfW = w / 2;
+  const n = Math.max(1, Math.round(teeth));
+  const toothH = Math.min(h * 0.6, (w / n) * 0.5); // keep the teeth from looking absurd on a squat or narrow pocket
+  const bottom = top - h;
+  const step = w / (2 * n);
+  const pts = [[cx - halfW, bottom], [cx + halfW, bottom], [cx + halfW, top - toothH]];
+  for (let i = 0; i < n; i++) {
+    pts.push([cx + halfW - step * (2 * i + 1), top]); // a peak
+    pts.push([cx + halfW - step * (2 * i + 2), top - toothH]); // the valley after it
+  }
+  return pts;
 }
 
 // ---- Key hole placement -----------------------------------------------------
@@ -268,7 +294,7 @@ export function buildKeychain(font, params) {
   const p = { ...DEFAULTS, ...params };
   // Without a base there is nothing to bore a key hole in, recess a back into, or put a border on.
   const hasBase = p.baseOn !== false;
-  if (!hasBase) Object.assign(p, { holeEnabled: false, backKind: 'none', borderW: 0 });
+  if (!hasBase) Object.assign(p, { holeEnabled: false, backKind: 'none', borderW: 0, hangEnabled: false });
   // The front: the text, and/or the artwork placed above, below or instead of it. A logo pinned to the edge of a
   // plate (the Name plate's `artSizeMM`) is added later, once the plate's real mm size is known — it keeps its own
   // size and position in mm, independent of how the text is scaled to fit.
@@ -551,28 +577,52 @@ export function buildKeychain(font, params) {
     }
   }
 
-  // Optional back content (QR code, text or artwork): a body recessed flush into the underside of the base.
+  // Optional back content (QR code, text or artwork): a body recessed flush into the underside of the base. The
+  // wall hanger is a second, independent recess in the same face — but left empty (no colored body), so it works
+  // whether or not there's also a QR code or text back, the way the key hole is independent of the base shape.
   let back = null;
   let backLayer = null;
   let baseLayers = hasBase ? [{ key: 'base', name: 'Base', polys: basePolys, z0: 0, z1 }] : [];
   let baseLowerPlain = null;
-  if (p.backKind !== 'none') {
+  let baseCutPolys = null; // the lower slab's cut-away footprint (back content, hanger, or both) — the mesh export
+  // caps the pocket's ceiling with this, whether or not any of it is a colored body.
+  let hangPaths = [];
+  if (hasBase && p.hangEnabled) {
+    if (p.baseH < 0.9) {
+      warnings.push('The base is too thin for a wall hanger — make it at least 0.9 mm thick.');
+    } else {
+      const w = Math.min(p.hangWidth, bodyBounds.w * 0.9);
+      const h = Math.min(p.hangHeight, bodyBounds.h * 0.5);
+      const top = bodyBounds.cy + bodyBounds.h / 2 - Math.min(p.hangMargin, bodyBounds.h * 0.3);
+      hangPaths = allPaths(runClipper(CL.ClipType.ctIntersection, [toPath(sawtoothPoints(bodyBounds.cx, top, w, h, p.hangTeeth))], basePunchedPaths));
+      if (!hangPaths.length) warnings.push("The wall hanger doesn't fit on the base — make the base wider or taller, or shrink the hanger.");
+    }
+  }
+  if (p.backKind !== 'none' || hangPaths.length) {
     try {
-      const laid = layoutBack({ p, font, art: p.art, basePunchedPaths, body: bodyBounds, warnings });
-      if (laid) {
-        const depth = Math.max(0.2, Math.min(p.backDepth, p.baseH - 0.2));
+      const laid = p.backKind !== 'none' ? layoutBack({ p, font, art: p.art, basePunchedPaths, body: bodyBounds, warnings }) : null;
+      const light = laid ? laid.light : [];
+      if (light.length || hangPaths.length) {
+        const cutAll = light.length && hangPaths.length ? allPaths(runClipper(CL.ClipType.ctUnion, light, hangPaths)) : light.length ? light : hangPaths;
+        const depths = [light.length && p.backDepth, hangPaths.length && p.hangDepth].filter(Boolean);
+        const depth = Math.max(0.2, Math.min(Math.max(...depths), p.baseH - 0.2));
         // The lower slab starts from the very same simplified outline as the upper slab (basePolys), so their
         // edges line up exactly where they meet and the STL export can join them into one closed shell.
-        const lightPolys = treeToPolys(unionTree(laid.light));
-        const lowerPolys = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePolys), laid.light));
-        baseLowerPlain = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePlain), laid.light)); // (simplified, like the upper slab: dense outlines make the bore boolean invalid)
+        const lightPolys = light.length ? treeToPolys(unionTree(light)) : [];
+        // Not simplified: it must match the lower slab's own cut exactly, or the mesh export's ceiling cap won't
+        // meet the pocket walls cleanly.
+        baseCutPolys = treeToPolys(unionTree(cutAll));
+        const lowerPolys = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePolys), cutAll));
+        baseLowerPlain = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePlain), cutAll)); // (simplified, like the upper slab: dense outlines make the bore boolean invalid)
         baseLayers = [
           { key: 'base', name: 'Base', polys: lowerPolys, z0: 0, z1: depth },
           { key: 'base', name: 'Base', polys: basePolys, z0: depth, z1 },
         ];
-        backLayer = { key: 'back', name: laid.name, polys: lightPolys, z0: 0, z1: depth };
-        const { light, ...info } = laid;
-        back = { ...info, depth, margin: p.backMargin, cx: bodyBounds.cx, cy: bodyBounds.cy };
+        if (laid) {
+          backLayer = { key: 'back', name: laid.name, polys: lightPolys, z0: 0, z1: depth };
+          const { light: _laidLight, ...info } = laid;
+          back = { ...info, depth, margin: p.backMargin, cx: bodyBounds.cx, cy: bodyBounds.cy };
+        }
       }
     } catch (err) {
       warnings.push(p.backKind === 'qr'
@@ -624,6 +674,7 @@ export function buildKeychain(font, params) {
       ...(backLayer ? [backLayer] : []),
     ],
     back,
+    baseCut: baseCutPolys ? { polys: baseCutPolys } : null, // the lower slab's cut footprint, for the mesh export's ceiling cap
     // Extras the STEP export uses to build exact curves and a true circular hole.
     exact: { contours, textOverlap, basePlain, baseLowerPlain, hole, holeTrack: holeTrackShifted },
     warnings,

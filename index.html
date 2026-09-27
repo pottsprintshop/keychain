@@ -276,6 +276,26 @@
       </div>
     </section>
 
+    <section class="panel needs-base" id="panelHang">
+      <div class="panel-head">
+        <h2>Wall hanger</h2>
+        <label class="check-inline"><input type="checkbox" id="hangEnabled"> Add a sawtooth notch</label>
+      </div>
+      <div id="hangControls">
+        <p class="hint">A shallow, empty notch recessed into the back, near the top — a nail catches in one of its teeth, the way a picture frame's sawtooth hanger does. Independent of the back content above; both can be on at once.</p>
+        <details class="nerd-menu" id="nerdHang">
+          <summary>Nerd Shite</summary>
+          <div class="fields compact">
+            <label>Width (mm) <input type="number" id="hangWidth" min="5" step="1" value="20"></label>
+            <label>Height (mm) <input type="number" id="hangHeight" min="3" step="1" value="10"></label>
+            <label>Recess depth (mm) <input type="number" id="hangDepth" min="0.2" step="0.1" value="1.2"></label>
+            <label>Teeth <input type="number" id="hangTeeth" min="1" max="12" step="1" value="4"></label>
+            <label>From the top edge (mm) <input type="number" id="hangMargin" min="0" step="0.5" value="3"></label>
+          </div>
+        </details>
+      </div>
+    </section>
+
     <section class="panel">
       <h2>Print check</h2>
       <table class="print-table" id="printTable"></table>

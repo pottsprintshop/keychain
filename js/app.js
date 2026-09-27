@@ -23,6 +23,7 @@ let timer = null;
 let preview = null;
 let lineShifts = []; // sideways nudge per text line (percent of the widest line), indexed by line number
 let lineShiftsY = []; // vertical nudge per text line (percent of the font size)
+let lineFonts = []; // Advanced: per-line font override, indexed by line number — a key into `fonts`, or '' for the main font
 const shiftUi = new Map(); // line number -> { rx, ry, show() }, so a drag can move the sliders
 let dragBase = null; // while dragging a line: the layout to hold still, and where the line started
 let dragQueued = false;
@@ -52,6 +53,7 @@ function readParams() {
     text: el.text.value,
     align: el.align.value,
     lineSpacing: num(el.lineSpacing, 1, 0.1),
+    lineFonts: lineFonts.map((key) => (key && fonts.get(key) ? fonts.get(key).font : null)),
     width: num(el.width, DEFAULTS.width / k, 0.1) * k,
     height: num(el.height, DEFAULTS.height / k, 0.1) * k,
     fit: el.fit.value,
@@ -394,7 +396,26 @@ function renderLineShifts() {
     const pair = document.createElement('div');
     pair.className = 'shift-pair';
     pair.append(X.row, Y.row);
-    block.append(head, pair);
+
+    // Advanced: give this line its own font instead of the one above.
+    const adv = document.createElement('details');
+    adv.className = 'nerd-menu';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Font';
+    const fontFields = document.createElement('div');
+    fontFields.className = 'fields';
+    const fontLabel = document.createElement('label');
+    fontLabel.className = 'grow';
+    const fontSelect = document.createElement('select');
+    fontSelect.setAttribute('aria-label', `Line ${i + 1} font`);
+    fontSelect.appendChild(new Option('Same as the text font', ''));
+    for (const o of el.font.options) fontSelect.appendChild(new Option(o.textContent, o.value));
+    fontSelect.value = lineFonts[i] || '';
+    fontLabel.append('Font ', fontSelect);
+    fontFields.append(fontLabel);
+    adv.append(summary, fontFields);
+
+    block.append(head, pair, adv);
     shiftUi.set(i, { rx, ry, show: () => { X.show(); Y.show(); } });
     rx.addEventListener('input', () => {
       lineShifts[i] = Number(rx.value);
@@ -404,8 +425,14 @@ function renderLineShifts() {
       lineShiftsY[i] = Number(ry.value);
       schedule();
     });
+    fontSelect.addEventListener('change', () => {
+      lineFonts[i] = fontSelect.value;
+      schedule();
+    });
     reset.addEventListener('click', () => {
       setShift(i, 0, 0);
+      lineFonts[i] = '';
+      fontSelect.value = '';
       schedule();
     });
     el.lineShiftList.append(block);
@@ -520,6 +547,7 @@ async function useFontNamed(name) {
         const font = parseFont(await (await found.blob()).arrayBuffer());
         const value = 'l:' + fonts.size;
         addFontOption(value, `${name} (this computer)`, font);
+        renderLineShifts(); // so the per-line font pickers offer it too
         hit = [value];
       } else {
         why = `This computer doesn't seem to have ${name}, or the browser wouldn't share it. `;
@@ -642,6 +670,11 @@ function designQuery() {
   if (entry && !/^[ul]:/.test(el.font.value) && entry !== first) values.font = entry.name;
   if (lineShifts.some(Boolean)) values.lineShifts = csv(lineShifts);
   if (lineShiftsY.some(Boolean)) values.lineShiftsY = csv(lineShiftsY);
+  // Per-line font overrides, by name (not the internal key) — an uploaded or this-computer one can't be shared, so
+  // that line's slot is left blank and usesUnsharable() already warns the link won't carry everything.
+  if (lineFonts.some(Boolean)) {
+    values.lineFonts = lineFonts.map((k) => (k && !/^[ul]:/.test(k) && fonts.get(k) ? fonts.get(k).name : '')).join('|');
+  }
   // A shape whose usual hole spot, border, height or text size isn't the plain default always spells it out, so its links keep it.
   for (const key of SHAPE_KEYED) {
     const plain = key === 'textSize' ? DEFAULTS.textSize * 100 : DEFAULTS[key];
@@ -661,7 +694,7 @@ function updateUrl() {
 function applyFromUrl() {
   const values = parseQuery(location.search);
   if (!Object.keys(values).length) return;
-  const { font, lineShifts: ls, lineShiftsY: lsy, ...controls } = values;
+  const { font, lineShifts: ls, lineShiftsY: lsy, lineFonts: lf, ...controls } = values;
   applyValues(document.querySelector('main'), controls);
   // A link that names a shape but not where the hole goes (or its border) gets that shape's usual ones.
   if (controls.baseShape) {
@@ -681,6 +714,11 @@ function applyFromUrl() {
   const list = (s) => String(s || '').split(',').map(Number).filter(Number.isFinite);
   lineShifts = list(ls);
   lineShiftsY = list(lsy);
+  lineFonts = lf
+    ? String(lf)
+        .split('|')
+        .map((name) => (name ? [...el.font.options].find((o) => o.textContent === name)?.value || '' : ''))
+    : [];
   prevUnit = el.unit.value;
   renderLineShifts();
   el.nerdSize.open = el.fit.value !== 'contain' || !el.sizeIncludesTab.checked; // show the folded settings if a link changed them
@@ -698,7 +736,7 @@ async function copyLink() {
   }
 }
 
-const usesUnsharable = () => /^[ul]:/.test(el.font.value) || !!art;
+const usesUnsharable = () => /^[ul]:/.test(el.font.value) || lineFonts.some((k) => /^[ul]:/.test(k || '')) || !!art;
 
 // ---- Batch ---------------------------------------------------------------------------
 
@@ -888,6 +926,7 @@ el.fontFile.addEventListener('change', async (e) => {
     const name = (fontDisplayName(font) || file.name) + ' (uploaded)';
     const value = 'u:' + fonts.size;
     addFontOption(value, name, font);
+    renderLineShifts(); // so the per-line font pickers offer it too
     el.font.value = value;
     el.fontNote.textContent = `Using ${name}. Uploaded fonts are only kept until you close this page.`;
     rebuild();

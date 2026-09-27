@@ -47,6 +47,7 @@ export const DEFAULTS = {
   holePush: 0, // 0..1: how far the tab sticks out past its snug position
   lineShifts: [], // per-line sideways nudge, % of the widest line
   lineShiftsY: [], // per-line vertical nudge, % of the font size
+  lineFonts: [], // Advanced: per-line font override (opentype.js Font), in place of the main font
   sportNumber: '', // the Sports tag's optional number (a jersey number), set after the name
   fixed: null, // while dragging a line: the previous build's `layout`, so nothing re-fits or re-centres
   // Extra outline rings, each one further out from the text (ring 1 is `outline`/`midH` above).
@@ -606,7 +607,7 @@ export function buildKeychain(font, params) {
     }
   }
   const half = halfBox(sx, sy);
-  const layout = p.fixed || { sx, sy, tx: -ink.cx * sx + edgeBiasMM + shx, ty: -ink.cy * sy + shy, shx, shy, hw: half.hw, hh: half.hh, widest: widestLine(font, text) };
+  const layout = p.fixed || { sx, sy, tx: -ink.cx * sx + edgeBiasMM + shx, ty: -ink.cy * sy + shy, shx, shy, hw: half.hw, hh: half.hh, widest: widestLine(font, text, p.lineFonts) };
 
   return {
     params: p,

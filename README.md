@@ -28,7 +28,9 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
 
 - **Text** — multi-line (Enter starts a new line), alignment, line spacing, and a left/right and an
   up/down slider for each line, side by side. In the Top view you can also drag a line of text
-  directly; the keychain re-fits to your size when you let go.
+  directly; the keychain re-fits to your size when you let go. Each line's controls also have a
+  "Font" disclosure (Advanced) to set that line's own font, in place of the one above — handy for a
+  name in one font and a tagline or icon-ish word in another.
 - **Font** — the bundled fonts (see `fonts/fonts.json`), or **Upload font…** (TTF / OTF / WOFF)
   for the current session only. Font, alignment and upload share a line. In *Potts Graffiti* two T's
   in a row (T and t are the same letter there) would run together into one long crossbar, so the

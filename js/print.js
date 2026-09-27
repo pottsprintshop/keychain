@@ -76,8 +76,12 @@ export function analyze(model, s) {
 
   if (s.layerHeight > 0) {
     const heights = [];
-    if (text) heights.push(['Text', p.textH]);
-    ringDefs(p).forEach((r) => heights.push([r.name, r.h]));
+    // Embedded, the text and outline rings aren't separate printed heights any more — just one recess depth.
+    if (p.embedFront) heights.push(['Embed depth', p.embedDepth]);
+    else {
+      if (text) heights.push(['Text', p.textH]);
+      ringDefs(p).forEach((r) => heights.push([r.name, r.h]));
+    }
     if (hasBase) heights.push(['Base', p.baseH]);
     if (model.back) heights.push(['Recess depth', model.back.depth]);
     const off = heights.filter(([, h]) => Math.abs(h / s.layerHeight - Math.round(h / s.layerHeight)) > 0.02);

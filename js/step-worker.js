@@ -241,15 +241,18 @@ function build(model, colors, progress) {
   if (base) progress('Building the base\u2026');
   if (base) {
     const baseVolume = baseParts.reduce((t, l) => t + netArea(l.polys) * (l.z1 - l.z0), 0);
-    // With something recessed into its back (back content, a wall hanger, or both) the base is two slabs: a
-    // lower one with the pocket(s) cut out, and the rest. Both start from the simplified outline (with the tab
-    // and fillets) and get the exact bore cut through them.
-    const slabs = baseParts.length === 2
-      ? [
-          { polys: model.exact.baseLowerPlain, z0: baseParts[0].z0, z1: baseParts[0].z1 },
-          { polys: basePlain, z0: baseParts[1].z0, z1: baseParts[1].z1 },
-        ]
-      : [{ polys: basePlain, z0: base.z0, z1: base.z1 }];
+    // With something recessed into it — back content, a wall hanger, embedded text + outline in the front, any
+    // combination — the base is up to three slabs: a pocketed one at each recessed face, and plain material
+    // between. Every slab starts from the simplified outline (with the tab and fillets) and gets the exact bore
+    // cut through it; a pocketed slab instead starts from its own exact (unsimplified) cut.
+    const cuts = model.baseCuts || [];
+    const backCut = cuts.find((c) => c.faceDown);
+    const frontCut = cuts.find((c) => !c.faceDown);
+    const slabs = baseParts.map((part, i) => {
+      if (backCut && i === 0 && Math.abs(part.z1 - backCut.z) < 1e-6) return { polys: model.exact.baseLowerPlain, z0: part.z0, z1: part.z1 };
+      if (frontCut && i === baseParts.length - 1 && Math.abs(part.z0 - frontCut.z) < 1e-6) return { polys: model.exact.baseUpperPlain, z0: part.z0, z1: part.z1 };
+      return { polys: basePlain, z0: part.z0, z1: part.z1 };
+    });
     for (const withArcs of [true, false]) {
       try {
         const bodies = slabs.map((s) => (withArcs ? bodyShape(s.polys, s.z0, s.z1) : { shape: prisms(s.polys, s.z0, s.z1), how: 'polygon', points: vertexCount(s.polys), segments: vertexCount(s.polys) }));

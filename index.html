@@ -179,6 +179,13 @@
           <label><input type="checkbox" id="fillGaps" checked> Solid base (fill the gaps between letters)</label>
         </div>
         <p class="hint">Fillets on the base, including where the key hole tab joins the body. The outline and text keep their exact shapes.</p>
+        <div class="control-row checkbox-row">
+          <label><input type="checkbox" id="embedFront"> Embed text &amp; outline (print face down)</label>
+        </div>
+        <div class="fields compact" id="embedFrontFields" hidden>
+          <label>Recess depth (mm) <input type="number" id="embedDepth" min="0.2" step="0.1" value="0.6"></label>
+        </div>
+        <p class="hint" id="embedFrontHint" hidden>Merges the text and every outline ring into one flush inlay (the outline's color) recessed into the front, instead of stacking them on top of it — no raised tiers, no border rim, so the whole piece can be printed face down.</p>
       </details>
     </section>
 

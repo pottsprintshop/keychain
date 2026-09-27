@@ -37,30 +37,30 @@ function trianglesOf(geometry) {
   return Array.from(g.attributes.position.array);
 }
 
-// Drop the triangles that lie flat at height z (a slab's top or bottom cap).
-function withoutCapAt(geometry, z) {
-  const a = trianglesOf(geometry);
+// Drop the triangles (from a flat triangle array) that lie flat at height z (a slab's top or bottom cap).
+function withoutCapAt(triangles, z) {
   const out = [];
-  for (let t = 0; t < a.length; t += 9) {
-    const flat = Math.abs(a[t + 2] - z) < 1e-6 && Math.abs(a[t + 5] - z) < 1e-6 && Math.abs(a[t + 8] - z) < 1e-6;
-    if (!flat) for (let k = 0; k < 9; k++) out.push(a[t + k]);
+  for (let t = 0; t < triangles.length; t += 9) {
+    const flat = Math.abs(triangles[t + 2] - z) < 1e-6 && Math.abs(triangles[t + 5] - z) < 1e-6 && Math.abs(triangles[t + 8] - z) < 1e-6;
+    if (!flat) for (let k = 0; k < 9; k++) out.push(triangles[t + k]);
   }
   return out;
 }
 
-// A flat cap over `polys` at height z, facing down (the ceiling of a pocket cut into the underside).
-function downwardCap(polys, z) {
+// A flat cap over `polys` at height z: the ceiling of a pocket cut into the underside (faceDown) or the floor of
+// one cut into the front (faceDown = false).
+function flatCap(polys, z, faceDown) {
   const v = ([x, y]) => new THREE.Vector2(...nudge(x, y));
   const shapes = polys.map(({ outer, holes }) => {
     const shape = new THREE.Shape(outer.map(v));
     shape.holes = holes.map((h) => new THREE.Path(h.map(v)));
     return shape;
   });
-  const a = trianglesOf(new THREE.ShapeGeometry(shapes));
+  const a = trianglesOf(new THREE.ShapeGeometry(shapes)); // faces up (+Z) by default
   const out = [];
   for (let t = 0; t < a.length; t += 9) {
-    // swap two vertices so the face points down, and lift to z
-    out.push(a[t], a[t + 1], z, a[t + 6], a[t + 7], z, a[t + 3], a[t + 4], z);
+    if (faceDown) out.push(a[t], a[t + 1], z, a[t + 6], a[t + 7], z, a[t + 3], a[t + 4], z); // swap two vertices to flip it
+    else out.push(a[t], a[t + 1], z, a[t + 3], a[t + 4], z, a[t + 6], a[t + 7], z);
   }
   return out;
 }
@@ -71,17 +71,20 @@ function geometryFrom(triangles) {
   return g;
 }
 
-// The base is two slabs when something is recessed into its underside: a lower one (with the pocket cut out)
-// and the rest. Stacked as separate solids their touching faces would double up, so join them into one closed
-// shell: drop the faces where they meet, and close the pocket's ceiling with the recessed body's outline.
-function joinedBase(slabs, back) {
-  const [lower, upper] = slabs;
-  const z = lower.z1;
-  const g1 = layerGeometry(lower.polys, lower.z0, lower.z1);
-  const g2 = layerGeometry(upper.polys, upper.z0, upper.z1);
-  const tris = [...withoutCapAt(g1, z), ...withoutCapAt(g2, z), ...downwardCap(back.polys, z)];
-  g1.dispose();
-  g2.dispose();
+// The base is more than one slab when something is recessed into it — the underside (back content, a wall
+// hanger), the front (embedded text + outline), or both, sharing its thickness from opposite faces. Stacked as
+// separate solids their touching faces would double up, so join them into one closed shell: drop the faces where
+// slabs meet, and close each pocket's ceiling (or floor) with its own cut outline. `cuts` is `model.baseCuts`.
+function joinedBase(slabs, cuts) {
+  const geoms = slabs.map((s) => layerGeometry(s.polys, s.z0, s.z1));
+  const tris = [];
+  slabs.forEach((s, i) => {
+    let t = trianglesOf(geoms[i]);
+    for (const c of cuts) if (Math.abs(s.z0 - c.z) < 1e-6 || Math.abs(s.z1 - c.z) < 1e-6) t = withoutCapAt(t, c.z);
+    tris.push(...t);
+  });
+  for (const c of cuts) tris.push(...flatCap(c.polys, c.z, c.faceDown));
+  geoms.forEach((g) => g.dispose());
   return geometryFrom(tris);
 }
 
@@ -94,8 +97,8 @@ export function stlFilesFromModel(model, name) {
   }
   return [...groups].map(([key, layers], i) => {
     const geometries =
-      key === 'base' && layers.length === 2 && model.baseCut
-        ? [joinedBase(layers, model.baseCut)]
+      key === 'base' && layers.length > 1 && model.baseCuts && model.baseCuts.length
+        ? [joinedBase(layers, model.baseCuts)]
         : layers.map((l) => layerGeometry(l.polys, l.z0, l.z1));
     const data = stlFromGeometries(geometries);
     geometries.forEach((g) => g.dispose());

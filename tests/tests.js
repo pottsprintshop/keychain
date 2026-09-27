@@ -410,6 +410,39 @@ test('a wall hanger is an empty sawtooth notch recessed into the back, independe
   assert(build(f, { hangEnabled: false }).layers.filter((l) => l.key === 'base').length === 1, 'no hanger by default');
 });
 
+test('Advanced: embedding the text and outline merges them into one flush inlay, for printing face down', () => {
+  const f = font(/Carter/);
+  const plain = build(f, { baseShape: 'plate', rings: 1 });
+  const flush = build(f, { baseShape: 'plate', rings: 1, embedFront: true });
+  assert(flush.warnings.length === 0, flush.warnings.join(' | '));
+  // No separate raised tiers or border — just the base's own thickness, flush.
+  near(flush.size.d, 1.2, 1e-6, 'the same as a plain baseH — no rings or text height added');
+  assert(flush.size.d < plain.size.d, 'thinner than the raised version (no stacked tiers)');
+  assert(!flush.layers.some((l) => l.key === 'text' || l.key === 'border'), 'no separate text or border layer');
+  const baseParts = flush.layers.filter((l) => l.key === 'base');
+  assert(baseParts.length === 2, 'the base is split for the inlay');
+  near(baseParts[baseParts.length - 1].z1, flush.size.d, 1e-6, 'the front slab reaches the very top');
+  const inlay = flush.layers.find((l) => l.key === 'outline');
+  assert(inlay, 'text + outline merged into one outline-colored inlay');
+  near(inlay.z1, flush.size.d, 1e-6, 'flush with the front face');
+  // Same footprint the raised outline ring would have had (text plus its outline offset).
+  near(netArea(inlay.polys), netArea(plain.layers.find((l) => l.key === 'outline').polys), 0.05, 'same combined footprint as the raised outline');
+  for (const file of stlFilesFromModel(flush, 'embed')) {
+    const st = stlStats(file.data), exp = volumeOf(flush, file.key);
+    assert(st.open === 0, `${file.key}: ${st.open} open edges`);
+    near(st.vol / exp, 1, 0.001, `${file.key} volume`);
+  }
+  // Combines with a wall hanger and back content on the same thin base — three recesses, one shared budget.
+  const all = build(f, { baseShape: 'nameplate', width: 100, height: 40, baseH: 1, holeEnabled: false, embedFront: true, hangEnabled: true, backKind: 'text', backText: 'x' });
+  assert(all.warnings.some((w) => /thin/.test(w)), 'a too-thin combination is flagged, not silently broken');
+  for (const file of stlFilesFromModel(all, 'embedall')) {
+    const st = stlStats(file.data), exp = volumeOf(all, file.key);
+    assert(st.open === 0, `${file.key}: ${st.open} open edges`);
+    near(st.vol / exp, 1, 0.001, `${file.key} volume`);
+  }
+  assert(build(f, { embedFront: false }).layers.some((l) => l.key === 'text'), 'no embedding by default — text is still its own raised layer');
+});
+
 test('Potts Graffiti: the second T of a pair drops and tucks left instead of merging with the first', () => {
   const f = font(/Graffiti/);
   const one = layoutText(f, 'T', { align: 'left' }).length; // contours per T

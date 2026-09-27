@@ -48,7 +48,12 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   dimmed, with a plus to bring it back. Without a base there is nothing for the key hole, back or
   border to attach to, so those panels switch off. Under *Advanced*: *Blend inside corners* /
   *Round outside corners* put fillets on the base (default 1 mm blend where the key hole tab joins the
-  body), and *Solid base* fills the gaps between letters; the outline and text are never altered.
+  body), *Solid base* fills the gaps between letters (the outline and text are never altered), and
+  *Embed text & outline (print face down)* merges the text and every outline ring into one flush inlay
+  (in the outline's color) recessed into the front, instead of stacking them on top of it — no raised
+  tiers or border rim, so the whole piece can be printed with its face down on the bed. The top-down
+  view looks the same either way; it just goes from stepped to flat. Combines with the back content and
+  the wall hanger (below), all sharing the base's thickness from whichever faces are in use.
 - **Base shape** (above the preview) — *Follow the text* or a plate that fills the whole width × height
   you set: *Rectangle* (with a corner radius), *Round / oval* (a circle when width = height), *Hexagon*
   (points left and right, corners rounded by the same radius), *Dog bone* (a shaft with two knobs at

@@ -6,8 +6,8 @@
 // glyph curves are kept alongside for the STEP export.
 
 import {
-  CL, SCALE, SIMPLIFY_EPS, toPath, fromPath, polyArea, runClipper, unionTree, offsetTree, allPaths, outerPaths,
-  treeToPolys, roundPaths, simplifyPolys, polysToPaths, circlePoints, pathsBBox, rectPath, squarePath, plateRing,
+  CL, SCALE, SIMPLIFY_EPS, MIN_AREA, toPath, fromPath, polyArea, runClipper, unionTree, offsetTree, allPaths, outerPaths,
+  treeToPolys, roundPaths, simplifyPolys, dropCollinear, polysToPaths, circlePoints, pathsBBox, rectPath, squarePath, plateRing,
 } from './clip.js';
 import { layoutText, widestLine, transformContours, flattenContour, bboxOfPolylines, NOMINAL } from './layout.js';
 import { layoutBack } from './back.js';
@@ -73,6 +73,11 @@ export const DEFAULTS = {
   hangDepth: 1.2, // how deep it is recessed into the base (mm)
   hangTeeth: 4,
   hangMargin: 3, // mm, gap kept between the notch and the top edge of the base
+  // Advanced: embed the text and every outline ring into the front instead of stacking them on top of it — merged
+  // into one flush inlay (in the outline's color), recessed from the front face, so the piece can be printed face
+  // down (no raised tiers to overhang). Independent of, and combinable with, the back content and the wall hanger.
+  embedFront: false,
+  embedDepth: 0.6, // how deep the inlay is recessed into the base (mm)
   art: null, // traced artwork ({ contours, aspect }), see art.js
   artMode: 'off', // on the front: 'off' | 'above' the text | 'below' it | 'right' or 'left' of it | 'only' (instead of the text)
   artLines: 2, // artwork height, in font sizes
@@ -128,6 +133,11 @@ export function shapeRing(kind, hw, hh, p) {
   }
   return plateRing(hw, hh, p.plateRadius);
 }
+
+// A hole (a letter counter, a gap between words) left near-zero-area by offsetting/unioning sometimes trips up the
+// mesh export's cap triangulator — a genuine one is never anywhere near this small, so it's safe to just fill it
+// back in (matches treeToPolys' own MIN_AREA: this is the same "drop slivers" idea, applied to holes too).
+const dropSliverHoles = (polys) => polys.map((p) => ({ ...p, holes: p.holes.filter((h) => Math.abs(polyArea(h)) >= MIN_AREA) }));
 
 // ---- Wall hanger --------------------------------------------------------------
 
@@ -550,20 +560,30 @@ export function buildKeychain(font, params) {
   }
 
   const width = b.x1 - b.x0, height = b.y1 - b.y0;
-  // Stack, bottom to top: the base, the outer rings down to ring 1, then the text.
+  // Stack, bottom to top: the base, the outer rings down to ring 1, then the text. Embedded (Advanced), there's no
+  // stack at all — the base is just baseH thick, and the rings + text become one flush inlay recessed into it below.
   const z1 = hasBase ? p.baseH : 0;
-  let zTop = z1;
+  const embedActive = hasBase && p.embedFront;
   const ringLayers = [];
-  for (let i = rings.length - 1; i >= 0; i--) {
-    ringLayers.push({ key: rings[i].key, name: rings[i].name, polys: ringPolys[i], z0: zTop, z1: zTop + rings[i].h });
-    zTop += rings[i].h;
+  let zText0, z3;
+  if (embedActive) {
+    zText0 = z1;
+    z3 = z1;
+  } else {
+    let zTop = z1;
+    for (let i = rings.length - 1; i >= 0; i--) {
+      ringLayers.push({ key: rings[i].key, name: rings[i].name, polys: ringPolys[i], z0: zTop, z1: zTop + rings[i].h });
+      zTop += rings[i].h;
+    }
+    zText0 = zTop;
+    z3 = zTop + (p.textOn === false ? 0 : p.textH);
   }
-  const zText0 = zTop, z3 = zTop + (p.textOn === false ? 0 : p.textH);
 
   // A raised rim around the edge of the base (tab included), as tall as the layer above the base. It is its own
-  // body, and the preview and exports color it like that layer.
+  // body, and the preview and exports color it like that layer. Doesn't apply once the front is embedded — the
+  // point there is a flush face, and the rim would stick out just as much as the tiers it replaces.
   let borderLayer = null;
-  if (hasBase && p.borderW > 0) {
+  if (hasBase && p.borderW > 0 && !embedActive) {
     const edge = outerPaths(unionTree(basePaths));
     let band = runClipper(CL.ClipType.ctDifference, edge, allPaths(offsetTree(edge, -p.borderW)));
     if (hole) band = runClipper(CL.ClipType.ctDifference, allPaths(band), [toPath(circlePoints(hole.cx, hole.cy, hole.R + 0.4))]); // never over the hole
@@ -577,15 +597,17 @@ export function buildKeychain(font, params) {
     }
   }
 
-  // Optional back content (QR code, text or artwork): a body recessed flush into the underside of the base. The
-  // wall hanger is a second, independent recess in the same face — but left empty (no colored body), so it works
-  // whether or not there's also a QR code or text back, the way the key hole is independent of the base shape.
+  // Recesses in the base, from either face: back content (QR/text/art) and/or a wall hanger notch, in the
+  // underside; embedded text + outline (Advanced), merged into one flush inlay in the outline's color, in the
+  // front. All independent and combinable — up to three slabs share the base's thickness between them.
   let back = null;
   let backLayer = null;
+  let embedLayer = null;
   let baseLayers = hasBase ? [{ key: 'base', name: 'Base', polys: basePolys, z0: 0, z1 }] : [];
   let baseLowerPlain = null;
-  let baseCutPolys = null; // the lower slab's cut-away footprint (back content, hanger, or both) — the mesh export
-  // caps the pocket's ceiling with this, whether or not any of it is a colored body.
+  let baseUpperPlain = null; // the exact (unsimplified) cut for the front slab, mirroring baseLowerPlain
+  // Where the mesh export caps each pocket's ceiling: [{ z, polys, faceDown }], one per internal slab boundary.
+  const baseCuts = [];
   let hangPaths = [];
   if (hasBase && p.hangEnabled) {
     if (p.baseH < 0.9) {
@@ -598,37 +620,71 @@ export function buildKeychain(font, params) {
       if (!hangPaths.length) warnings.push("The wall hanger doesn't fit on the base — make the base wider or taller, or shrink the hanger.");
     }
   }
-  if (p.backKind !== 'none' || hangPaths.length) {
+
+  let backCutAll = [], backDepthWanted = 0, laidBack = null;
+  if (hasBase && (p.backKind !== 'none' || hangPaths.length)) {
     try {
-      const laid = p.backKind !== 'none' ? layoutBack({ p, font, art: p.art, basePunchedPaths, body: bodyBounds, warnings }) : null;
-      const light = laid ? laid.light : [];
+      laidBack = p.backKind !== 'none' ? layoutBack({ p, font, art: p.art, basePunchedPaths, body: bodyBounds, warnings }) : null;
+      const light = laidBack ? laidBack.light : [];
       if (light.length || hangPaths.length) {
-        const cutAll = light.length && hangPaths.length ? allPaths(runClipper(CL.ClipType.ctUnion, light, hangPaths)) : light.length ? light : hangPaths;
-        const depths = [light.length && p.backDepth, hangPaths.length && p.hangDepth].filter(Boolean);
-        const depth = Math.max(0.2, Math.min(Math.max(...depths), p.baseH - 0.2));
-        // The lower slab starts from the very same simplified outline as the upper slab (basePolys), so their
-        // edges line up exactly where they meet and the STL export can join them into one closed shell.
-        const lightPolys = light.length ? treeToPolys(unionTree(light)) : [];
-        // Not simplified: it must match the lower slab's own cut exactly, or the mesh export's ceiling cap won't
-        // meet the pocket walls cleanly.
-        baseCutPolys = treeToPolys(unionTree(cutAll));
-        const lowerPolys = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePolys), cutAll));
-        baseLowerPlain = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePlain), cutAll)); // (simplified, like the upper slab: dense outlines make the bore boolean invalid)
-        baseLayers = [
-          { key: 'base', name: 'Base', polys: lowerPolys, z0: 0, z1: depth },
-          { key: 'base', name: 'Base', polys: basePolys, z0: depth, z1 },
-        ];
-        if (laid) {
-          backLayer = { key: 'back', name: laid.name, polys: lightPolys, z0: 0, z1: depth };
-          const { light: _laidLight, ...info } = laid;
-          back = { ...info, depth, margin: p.backMargin, cx: bodyBounds.cx, cy: bodyBounds.cy };
-        }
+        backCutAll = light.length && hangPaths.length ? allPaths(runClipper(CL.ClipType.ctUnion, light, hangPaths)) : light.length ? light : hangPaths;
+        backDepthWanted = Math.max(light.length ? p.backDepth : 0, hangPaths.length ? p.hangDepth : 0);
       }
     } catch (err) {
       warnings.push(p.backKind === 'qr'
         ? `Can't make that QR code: ${err.message || err}. Try shorter text or lower error correction.`
         : `Can't make the back: ${err.message || err}.`);
     }
+  }
+
+  let embedCutAll = [], embedDepthWanted = 0;
+  if (embedActive) {
+    const src = rings.length ? ringPolys[ringPolys.length - 1] : textPolys;
+    embedCutAll = allPaths(runClipper(CL.ClipType.ctIntersection, polysToPaths(src), basePunchedPaths));
+    if (!embedCutAll.length) warnings.push("There's nothing to embed — turn on the text, or an outline ring, to give the front an inlay.");
+    else embedDepthWanted = p.embedDepth;
+  }
+
+  if (hasBase && (backCutAll.length || embedCutAll.length)) {
+    const MIN_WEB = 0.2; // mm of solid material a single recess always leaves (matches the old single-pocket clamp)
+    let depthBack = backCutAll.length ? Math.max(0.2, Math.min(backDepthWanted, z1 - MIN_WEB)) : 0;
+    let depthFront = embedCutAll.length ? Math.max(0.2, Math.min(embedDepthWanted, z1 - MIN_WEB)) : 0;
+    // Only reduce further (and only warn) when BOTH sides are recessed and together they'd leave less than that
+    // same minimum web between them.
+    const avail = z1 - MIN_WEB;
+    if (depthBack > 0 && depthFront > 0 && depthBack + depthFront > avail) {
+      const k = Math.max(0, avail) / (depthBack + depthFront);
+      depthBack *= k;
+      depthFront *= k;
+      warnings.push('The base is too thin for everything recessed into it — the pockets were made shallower to fit.');
+    }
+    const zBack = depthBack, zFront = z1 - depthFront;
+    const slabs = [];
+    if (depthBack > 0) {
+      // Dropping near-exactly-collinear points (not simplifying the shape) keeps a wide, complex cut from
+      // occasionally giving the mesh triangulator a degenerate edge; deriving the slab's hole from the very
+      // same cleaned-up boundary as the cap keeps the two an exact match.
+      const cutPolys = dropSliverHoles(dropCollinear(treeToPolys(unionTree(backCutAll))));
+      const cutPaths = polysToPaths(cutPolys);
+      baseCuts.push({ z: zBack, polys: cutPolys, faceDown: true });
+      slabs.push({ key: 'base', name: 'Base', polys: treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePolys), cutPaths)), z0: 0, z1: zBack });
+      baseLowerPlain = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePlain), cutPaths)); // (simplified: dense outlines make the bore boolean invalid)
+      if (laidBack) {
+        backLayer = { key: 'back', name: laidBack.name, polys: treeToPolys(unionTree(laidBack.light)), z0: 0, z1: zBack };
+        const { light: _laidLight, ...info } = laidBack;
+        back = { ...info, depth: zBack, margin: p.backMargin, cx: bodyBounds.cx, cy: bodyBounds.cy };
+      }
+    }
+    if (zFront > zBack + 1e-6) slabs.push({ key: 'base', name: 'Base', polys: basePolys, z0: zBack, z1: zFront });
+    if (depthFront > 0) {
+      const cutPolys = dropSliverHoles(dropCollinear(treeToPolys(unionTree(embedCutAll))));
+      const cutPaths = polysToPaths(cutPolys);
+      baseCuts.push({ z: zFront, polys: cutPolys, faceDown: false });
+      slabs.push({ key: 'base', name: 'Base', polys: treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePolys), cutPaths)), z0: zFront, z1: z1 });
+      baseUpperPlain = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePlain), cutPaths));
+      embedLayer = { key: 'outline', name: 'Outline', polys: cutPolys, z0: zFront, z1: z1 };
+    }
+    baseLayers = slabs;
   }
 
   // Per-line ink (final frame) for picking a line under the pointer, and the numbers a drag needs
@@ -670,13 +726,14 @@ export function buildKeychain(font, params) {
       ...baseLayers,
       ...(borderLayer ? [borderLayer] : []),
       ...ringLayers,
-      ...(p.textOn === false ? [] : [{ key: 'text', name: 'Text', polys: textPolys, z0: zText0, z1: z3 }]),
+      ...(embedActive || p.textOn === false ? [] : [{ key: 'text', name: 'Text', polys: textPolys, z0: zText0, z1: z3 }]),
+      ...(embedLayer ? [embedLayer] : []),
       ...(backLayer ? [backLayer] : []),
     ],
     back,
-    baseCut: baseCutPolys ? { polys: baseCutPolys } : null, // the lower slab's cut footprint, for the mesh export's ceiling cap
+    baseCuts, // where the mesh export caps each pocket's ceiling: [{ z, polys, faceDown }]
     // Extras the STEP export uses to build exact curves and a true circular hole.
-    exact: { contours, textOverlap, basePlain, baseLowerPlain, hole, holeTrack: holeTrackShifted },
+    exact: { contours, textOverlap, basePlain, baseLowerPlain, baseUpperPlain, hole, holeTrack: holeTrackShifted },
     warnings,
   };
 }

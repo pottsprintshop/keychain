@@ -65,6 +65,8 @@ function readParams() {
     outline: num(el.outline, DEFAULTS.outline, 0),
     baseMargin: num(el.baseMargin, DEFAULTS.baseMargin, 0),
     fillGaps: el.fillGaps.checked,
+    embedFront: el.embedFront.checked,
+    embedDepth: num(el.embedDepth, DEFAULTS.embedDepth, 0.2),
     baseShape: el.baseShape.value,
     sportNumber: el.sportNumber.value,
     baseOn: el.baseOn.value === '1',
@@ -183,6 +185,7 @@ function syncLabels() {
   for (const b of el.holeQuick.children) b.classList.toggle('active', Math.round(angle) === Number(b.dataset.angle));
   el.holeControls.style.opacity = el.holeEnabled.checked ? '1' : '0.45';
   el.hangControls.style.opacity = el.hangEnabled.checked ? '1' : '0.45';
+  el.embedFrontFields.hidden = el.embedFrontHint.hidden = !el.embedFront.checked;
   // Show only the parts of the Back panel that apply, and only the rings that exist.
   const kind = el.backKind.value;
   el.backControls.hidden = kind === 'none';

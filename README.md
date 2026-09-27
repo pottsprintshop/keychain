@@ -84,6 +84,11 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   it further from the text. Every slider's value is a box you can click and type into.
 - **QR code on the back** — type a link or any text and a QR code is recessed into the back of the
   base (see below).
+- **Wall hanger** — an "Add a sawtooth notch" toggle (off by default), independent of the key hole and
+  the back content, for mounting on a nail instead of (or alongside) a key ring: an empty, shallow
+  zigzag pocket recessed into the back, near the top. *Nerd Shite* has its width, height, recess depth,
+  tooth count and distance from the top edge. It coexists with a QR code or back text — both share the
+  same recessed slab.
 - **Preview** — live 3D view (Top / 3D / Back, drag to rotate, scroll to zoom).
 
 ## QR code on the back

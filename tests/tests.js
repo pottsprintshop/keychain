@@ -377,6 +377,39 @@ test('a border is a raised rim along the edge of the base, as tall as the layer 
   assert(wide.warnings.some((w) => /border/.test(w)), 'a border that runs into the outline is flagged');
 });
 
+test('a wall hanger is an empty sawtooth notch recessed into the back, independent of the back content', () => {
+  const f = font(/Carter/);
+  for (const shape of ['plate', 'round', 'text']) {
+    const m = build(f, { baseShape: shape, hangEnabled: true, width: 70, height: 45 });
+    assert(m.warnings.length === 0, `${shape}: ${m.warnings.join(' | ')}`);
+    const baseParts = m.layers.filter((l) => l.key === 'base');
+    assert(baseParts.length === 2, `${shape}: the base is split into two slabs`);
+    assert(!m.layers.some((l) => l.key === 'back'), `${shape}: an empty notch isn't a colored body`);
+    // The lower slab's area is smaller than the upper's by roughly the notch's own footprint.
+    assert(netArea(baseParts[0].polys) < netArea(baseParts[1].polys) - 20, `${shape}: the notch is actually cut away`);
+    for (const file of stlFilesFromModel(m, 'hang')) {
+      const st = stlStats(file.data), exp = volumeOf(m, file.key);
+      assert(st.open === 0, `${shape} ${file.key}: ${st.open} open edges`);
+      near(st.vol / exp, 1, 0.001, `${shape} ${file.key} volume`);
+    }
+  }
+  // It coexists with QR back content: two independent cuts sharing one lower slab, still watertight.
+  const both = build(f, { baseShape: 'plate', hangEnabled: true, backKind: 'qr', qrText: 'https://x.co/a' });
+  assert(both.warnings.length === 0, both.warnings.join(' | '));
+  assert(both.layers.filter((l) => l.key === 'base').length === 2, 'still one shared lower slab');
+  assert(both.layers.some((l) => l.key === 'back'), 'the QR code is still there as its own body');
+  for (const file of stlFilesFromModel(both, 'hangqr')) {
+    const st = stlStats(file.data), exp = volumeOf(both, file.key);
+    assert(st.open === 0, `${file.key}: ${st.open} open edges`);
+    near(st.vol / exp, 1, 0.001, `${file.key} volume`);
+  }
+  // Too thin a base to recess into: flagged, not silently broken.
+  const thin = build(f, { baseShape: 'plate', hangEnabled: true, baseH: 0.5 });
+  assert(thin.warnings.some((w) => /thin/.test(w)), 'a base too thin for the hanger is flagged');
+  assert(thin.layers.filter((l) => l.key === 'base').length === 1, 'no notch cut when the base is too thin');
+  assert(build(f, { hangEnabled: false }).layers.filter((l) => l.key === 'base').length === 1, 'no hanger by default');
+});
+
 test('Potts Graffiti: the second T of a pair drops and tucks left instead of merging with the first', () => {
   const f = font(/Graffiti/);
   const one = layoutText(f, 'T', { align: 'left' }).length; // contours per T

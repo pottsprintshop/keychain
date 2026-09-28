@@ -70,9 +70,13 @@ export const DEFAULTS = {
   hangEnabled: false,
   hangWidth: 20, // mm
   hangHeight: 10, // mm
-  hangDepth: 1.2, // how deep it is recessed into the base (mm)
+  hangDepth: 1.2, // how deep the entry slot (the sawtooth itself) is recessed into the base (mm)
   hangTeeth: 4,
   hangMargin: 3, // mm, gap kept between the notch and the top edge of the base
+  // Behind the entry slot, a second, wider and deeper pocket for the nail's head, so the piece sits flush
+  // against the wall instead of standing off it by the head's own thickness.
+  hangHeadDepth: 2.5, // mm, how much *further* than hangDepth the head pocket reaches
+  hangHeadHeight: 16, // mm, taller than hangHeight so the head has room to seat wherever the shank catches
   // Advanced: embed the text and every outline ring into the front instead of stacking them on top of it — merged
   // into one flush inlay (in the outline's color), recessed from the front face, so the piece can be printed face
   // down (no raised tiers to overhang). Independent of, and combinable with, the back content and the wall hanger.
@@ -602,13 +606,14 @@ export function buildKeychain(font, params) {
   // front. All independent and combinable — up to three slabs share the base's thickness between them.
   let back = null;
   let backLayer = null;
-  let embedLayer = null;
+  let embedLayers = [];
   let baseLayers = hasBase ? [{ key: 'base', name: 'Base', polys: basePolys, z0: 0, z1 }] : [];
   let baseLowerPlain = null;
   let baseUpperPlain = null; // the exact (unsimplified) cut for the front slab, mirroring baseLowerPlain
   // Where the mesh export caps each pocket's ceiling: [{ z, polys, faceDown }], one per internal slab boundary.
   const baseCuts = [];
   let hangPaths = [];
+  let headPaths = []; // the deeper, wider pocket behind the sawtooth, for the nail's head
   if (hasBase && p.hangEnabled) {
     if (p.baseH < 0.9) {
       warnings.push('The base is too thin for a wall hanger — make it at least 0.9 mm thick.');
@@ -618,6 +623,21 @@ export function buildKeychain(font, params) {
       const top = bodyBounds.cy + bodyBounds.h / 2 - Math.min(p.hangMargin, bodyBounds.h * 0.3);
       hangPaths = allPaths(runClipper(CL.ClipType.ctIntersection, [toPath(sawtoothPoints(bodyBounds.cx, top, w, h, p.hangTeeth))], basePunchedPaths));
       if (!hangPaths.length) warnings.push("The wall hanger doesn't fit on the base — make the base wider or taller, or shrink the hanger.");
+      else {
+        // Centred on the same spot as the sawtooth, but taller and a touch wider — the nail can catch anywhere
+        // along the teeth, so the head needs clearance across that whole span, not just where a particular tooth
+        // happens to be. Left a hair bigger than the sawtooth's own bounding box on every side (`gap`): if the
+        // two touched exactly, Clipper would stitch the sawtooth into the pocket's own outer boundary instead of
+        // keeping it a proper hole, and the mesh triangulator would choke on the result. And never past the
+        // base's own edge, or the pocket's cut boundary would run flush along the base's outer wall — the same
+        // kind of degenerate edge.
+        const gap = 0.6;
+        const headTop = Math.min(top + gap, bodyBounds.cy + bodyBounds.h / 2 - 0.5);
+        const bottomLimit = bodyBounds.cy - bodyBounds.h / 2 + 1;
+        const headH = Math.max(h + 2 * gap, Math.min(p.hangHeadHeight, headTop - bottomLimit));
+        const headW = Math.min(w + 2 * gap, bodyBounds.w * 0.95);
+        headPaths = allPaths(runClipper(CL.ClipType.ctIntersection, [rectPath(bodyBounds.cx, headTop - headH / 2, headW / 2, headH / 2)], basePunchedPaths));
+      }
     }
   }
 
@@ -637,52 +657,92 @@ export function buildKeychain(font, params) {
     }
   }
 
-  let embedCutAll = [], embedDepthWanted = 0;
+  // Each tier keeps its own color, innermost (text) to outermost (the last ring) — same nesting the raised
+  // version stacks bottom to top, just flattened: tier i's visible area is its own shape minus the one inside it.
+  let embedCutAll = [], embedDepthWanted = 0, embedTiers = [];
   if (embedActive) {
-    const src = rings.length ? ringPolys[ringPolys.length - 1] : textPolys;
-    embedCutAll = allPaths(runClipper(CL.ClipType.ctIntersection, polysToPaths(src), basePunchedPaths));
+    const raw = [];
+    if (p.textOn !== false) raw.push({ key: 'text', name: 'Text', paths: polysToPaths(textPolys) });
+    rings.forEach((r, i) => raw.push({ key: r.key, name: r.name, paths: polysToPaths(ringPolys[i]) }));
+    let inner = [];
+    for (const t of raw) {
+      embedTiers.push({ key: t.key, name: t.name, paths: inner.length ? allPaths(runClipper(CL.ClipType.ctDifference, t.paths, inner)) : t.paths });
+      inner = t.paths;
+    }
+    const outer = raw.length ? raw[raw.length - 1].paths : [];
+    embedCutAll = allPaths(runClipper(CL.ClipType.ctIntersection, outer, basePunchedPaths));
     if (!embedCutAll.length) warnings.push("There's nothing to embed — turn on the text, or an outline ring, to give the front an inlay.");
     else embedDepthWanted = p.embedDepth;
   }
 
-  if (hasBase && (backCutAll.length || embedCutAll.length)) {
+  if (hasBase && (backCutAll.length || headPaths.length || embedCutAll.length)) {
     const MIN_WEB = 0.2; // mm of solid material a single recess always leaves (matches the old single-pocket clamp)
-    let depthBack = backCutAll.length ? Math.max(0.2, Math.min(backDepthWanted, z1 - MIN_WEB)) : 0;
-    let depthFront = embedCutAll.length ? Math.max(0.2, Math.min(embedDepthWanted, z1 - MIN_WEB)) : 0;
-    // Only reduce further (and only warn) when BOTH sides are recessed and together they'd leave less than that
-    // same minimum web between them.
+    let depthBack = backCutAll.length ? Math.max(0.2, backDepthWanted) : 0;
+    let depthHead = headPaths.length ? Math.max(0.2, p.hangHeadDepth) : 0; // *extra*, beyond depthBack
+    let depthFront = embedCutAll.length ? Math.max(0.2, embedDepthWanted) : 0;
+    // Scale everything recessed from the back down together if it and the front recess would leave less than the
+    // minimum web between them (the entry slot and the head pocket always share one budget, since one sits behind
+    // the other; only warn once something had to give).
     const avail = z1 - MIN_WEB;
-    if (depthBack > 0 && depthFront > 0 && depthBack + depthFront > avail) {
-      const k = Math.max(0, avail) / (depthBack + depthFront);
+    const backTotal = depthBack + depthHead;
+    if (backTotal + depthFront > avail && backTotal + depthFront > 0) {
+      const k = Math.max(0, avail) / (backTotal + depthFront);
       depthBack *= k;
+      depthHead *= k;
       depthFront *= k;
       warnings.push('The base is too thin for everything recessed into it — the pockets were made shallower to fit.');
     }
-    const zBack = depthBack, zFront = z1 - depthFront;
+    const zBack = depthBack, zHead = depthBack + depthHead, zFront = z1 - depthFront;
     const slabs = [];
+    // Dropping near-exactly-collinear points (not simplifying the shape) keeps a wide, complex cut from
+    // occasionally giving the mesh triangulator a degenerate edge; every cap and its slab's hole share this same
+    // cleaned-up boundary (computed once), so their edges land on exactly the same points.
+    const shankCutPolys = depthBack > 0 ? dropSliverHoles(dropCollinear(treeToPolys(unionTree(backCutAll)))) : [];
+    const shankCutPaths = polysToPaths(shankCutPolys);
+    const headCutPolys = depthHead > 0 ? dropSliverHoles(dropCollinear(treeToPolys(unionTree(headPaths)))) : [];
+    const headCutPaths = polysToPaths(headCutPolys);
     if (depthBack > 0) {
-      // Dropping near-exactly-collinear points (not simplifying the shape) keeps a wide, complex cut from
-      // occasionally giving the mesh triangulator a degenerate edge; deriving the slab's hole from the very
-      // same cleaned-up boundary as the cap keeps the two an exact match.
-      const cutPolys = dropSliverHoles(dropCollinear(treeToPolys(unionTree(backCutAll))));
-      const cutPaths = polysToPaths(cutPolys);
-      baseCuts.push({ z: zBack, polys: cutPolys, faceDown: true });
-      slabs.push({ key: 'base', name: 'Base', polys: treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePolys), cutPaths)), z0: 0, z1: zBack });
-      baseLowerPlain = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePlain), cutPaths)); // (simplified: dense outlines make the bore boolean invalid)
+      // Only the part of the shank cut that ISN'T continued by the head pocket right behind it needs its own
+      // ceiling cap (any back content, say) — the sawtooth itself stays open clear through to the head pocket's
+      // own top, which the step cap below handles instead.
+      const ceilingPolys = depthHead === 0 ? shankCutPolys
+        : shankCutPaths.length ? treeToPolys(runClipper(CL.ClipType.ctDifference, shankCutPaths, headCutPaths)) : [];
+      if (ceilingPolys.length) baseCuts.push({ z: zBack, polys: ceilingPolys, faceDown: true });
+      slabs.push({ key: 'base', name: 'Base', polys: treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePolys), shankCutPaths)), z0: 0, z1: zBack });
+      baseLowerPlain = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePlain), shankCutPaths)); // (simplified: dense outlines make the bore boolean invalid)
       if (laidBack) {
         backLayer = { key: 'back', name: laidBack.name, polys: treeToPolys(unionTree(laidBack.light)), z0: 0, z1: zBack };
         const { light: _laidLight, ...info } = laidBack;
         back = { ...info, depth: zBack, margin: p.backMargin, cx: bodyBounds.cx, cy: bodyBounds.cy };
       }
     }
-    if (zFront > zBack + 1e-6) slabs.push({ key: 'base', name: 'Base', polys: basePolys, z0: zBack, z1: zFront });
+    if (depthHead > 0) {
+      // Wider than the entry slot below it, so there's a step: within that step (the head pocket's own footprint
+      // minus the slot's), material ends here — the step's floor, facing up into the head pocket above it. Not
+      // run through dropCollinear again: its inner boundary is exactly the sawtooth's own outline, already
+      // cleaned above, and re-processing the difference could nudge those shared points out of step with the
+      // shank slab's own wall.
+      const stepPolys = shankCutPaths.length ? treeToPolys(runClipper(CL.ClipType.ctDifference, headCutPaths, shankCutPaths)) : headCutPolys;
+      if (stepPolys.length) baseCuts.push({ z: zBack, polys: stepPolys, faceDown: false });
+      baseCuts.push({ z: zHead, polys: headCutPolys, faceDown: true });
+      slabs.push({ key: 'base', name: 'Base', polys: treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePolys), headCutPaths)), z0: zBack, z1: zHead });
+    }
+    if (zFront > zHead + 1e-6) slabs.push({ key: 'base', name: 'Base', polys: basePolys, z0: zHead, z1: zFront });
     if (depthFront > 0) {
       const cutPolys = dropSliverHoles(dropCollinear(treeToPolys(unionTree(embedCutAll))));
       const cutPaths = polysToPaths(cutPolys);
       baseCuts.push({ z: zFront, polys: cutPolys, faceDown: false });
       slabs.push({ key: 'base', name: 'Base', polys: treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePolys), cutPaths)), z0: zFront, z1: z1 });
       baseUpperPlain = treeToPolys(runClipper(CL.ClipType.ctDifference, polysToPaths(basePlain), cutPaths));
-      embedLayer = { key: 'outline', name: 'Outline', polys: cutPolys, z0: zFront, z1: z1 };
+      embedLayers = embedTiers
+        .map((t) => ({
+          key: t.key,
+          name: t.name,
+          polys: dropSliverHoles(dropCollinear(treeToPolys(unionTree(allPaths(runClipper(CL.ClipType.ctIntersection, t.paths, basePunchedPaths)))))),
+          z0: zFront,
+          z1,
+        }))
+        .filter((l) => l.polys.length);
     }
     baseLayers = slabs;
   }
@@ -727,7 +787,7 @@ export function buildKeychain(font, params) {
       ...(borderLayer ? [borderLayer] : []),
       ...ringLayers,
       ...(embedActive || p.textOn === false ? [] : [{ key: 'text', name: 'Text', polys: textPolys, z0: zText0, z1: z3 }]),
-      ...(embedLayer ? [embedLayer] : []),
+      ...embedLayers,
       ...(backLayer ? [backLayer] : []),
     ],
     back,

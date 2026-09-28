@@ -49,11 +49,12 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   border to attach to, so those panels switch off. Under *Advanced*: *Blend inside corners* /
   *Round outside corners* put fillets on the base (default 1 mm blend where the key hole tab joins the
   body), *Solid base* fills the gaps between letters (the outline and text are never altered), and
-  *Embed text & outline (print face down)* merges the text and every outline ring into one flush inlay
-  (in the outline's color) recessed into the front, instead of stacking them on top of it — no raised
-  tiers or border rim, so the whole piece can be printed with its face down on the bed. The top-down
-  view looks the same either way; it just goes from stepped to flat. Combines with the back content and
-  the wall hanger (below), all sharing the base's thickness from whichever faces are in use.
+  *Embed text & outline (print face down)* recesses the text and every outline ring flush into the
+  front, instead of stacking them on top of it — each keeps its own color, nested the same way the
+  raised version stacks them, just flattened. No raised tiers or border rim, so the whole piece can be
+  printed with its face down on the bed. The top-down view looks the same either way; it just goes from
+  stepped to flat. Combines with the back content and the wall hanger (below), all sharing the base's
+  thickness from whichever faces are in use.
 - **Base shape** (above the preview) — *Follow the text* or a plate that fills the whole width × height
   you set: *Rectangle* (with a corner radius), *Round / oval* (a circle when width = height), *Hexagon*
   (points left and right, corners rounded by the same radius), *Dog bone* (a shaft with two knobs at
@@ -91,9 +92,10 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   base (see below).
 - **Wall hanger** — an "Add a sawtooth notch" toggle (off by default), independent of the key hole and
   the back content, for mounting on a nail instead of (or alongside) a key ring: an empty, shallow
-  zigzag pocket recessed into the back, near the top. *Nerd Shite* has its width, height, recess depth,
-  tooth count and distance from the top edge. It coexists with a QR code or back text — both share the
-  same recessed slab.
+  zigzag entry slot recessed into the back, near the top, with a wider, deeper pocket right behind it
+  for the nail's head, so the piece sits flush against the wall. *Nerd Shite* has the entry slot's
+  width, height, recess depth, tooth count and distance from the top edge, and the head pocket's own
+  depth and height. It coexists with a QR code or back text — all three share the same recessed side.
 - **Preview** — live 3D view (Top / 3D / Back, drag to rotate, scroll to zoom).
 
 ## QR code on the back

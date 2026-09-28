@@ -88,6 +88,8 @@ function readParams() {
     hangDepth: num(el.hangDepth, DEFAULTS.hangDepth, 0.2),
     hangTeeth: num(el.hangTeeth, DEFAULTS.hangTeeth, 1),
     hangMargin: num(el.hangMargin, DEFAULTS.hangMargin, 0),
+    hangHeadDepth: num(el.hangHeadDepth, DEFAULTS.hangHeadDepth, 0.2),
+    hangHeadHeight: num(el.hangHeadHeight, DEFAULTS.hangHeadHeight, 3),
     lineShifts: lineShifts.slice(),
     lineShiftsY: lineShiftsY.slice(),
     rings: Number(el.rings.value),

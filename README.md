@@ -31,6 +31,10 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   directly; the keychain re-fits to your size when you let go. Each line's controls also have a
   "Font" disclosure (Advanced) to set that line's own font, in place of the one above — handy for a
   name in one font and a tagline or icon-ish word in another.
+- **Auto-wrap** — chooses word breaks for the largest fitted text, preserving explicit newlines. The minimum
+  text / outline gap reserves room inside the border (or base edge). Uses the main font; manual per-line
+  positioning and font overrides resume when auto-wrap is off. The text-size slider still scales the result. Up to eight words, every word-break combination is
+  checked; longer phrases use balanced layouts for each line count to keep the editor responsive.
 - **Font** — the bundled fonts (see `fonts/fonts.json`), or **Upload font…** (TTF / OTF / WOFF)
   for the current session only. Font, alignment and upload share a line. In *Potts Graffiti* two T's
   in a row (T and t are the same letter there) would run together into one long crossbar, so the
@@ -51,7 +55,7 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   body), *Solid base* fills the gaps between letters (the outline and text are never altered), and
   *Embed text & outline (print face down)* recesses the text and every outline ring flush into the
   front, instead of stacking them on top of it — each keeps its own color, nested the same way the
-  raised version stacks them, just flattened. No raised tiers or border rim, so the whole piece can be
+  raised version stacks them, just flattened. The border becomes a flush inlay too, so the whole piece can be
   printed with its face down on the bed. The top-down view looks the same either way; it just goes from
   stepped to flat. Combines with the back content and the wall hanger (below), all sharing the base's
   thickness from whichever faces are in use.
@@ -62,7 +66,8 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   below for both). On a plate the text is scaled to the biggest size that keeps the full outline + base
   margin inside the shape, and the key hole slides along the shape's edge. **Border** adds a raised rim
   of that width around the edge of the base (tab included), as tall as the layer above the base and
-  colored like it; it is its own body in the exports. The dog bone starts with the key hole in the
+  colored like it; it is its own body in the exports. **Border inset** leaves a gap in mm between the outer edge and
+  the border (for example 1.2 mm); its width stays unchanged. In face-down mode it is recessed flush. The dog bone starts with the key hole in the
   middle of its top edge, between the knobs, and a 0.8 mm border. Picking another shape moves these to
   that shape's usual values unless you've changed them yourself.
 - **Sports tag** — a long, thin rectangle (4 × 0.75 in, key hole tab included) with a 0.8 mm border,
@@ -235,5 +240,5 @@ Drop the `.ttf` / `.otf` into `fonts/` and add a line to `fonts/fonts.json`:
 { "name": "My Font", "file": "MyFont-Regular.ttf" }
 ```
 
-Bundled: Carter One (SIL Open Font License), Lemon Milk (Bold, Medium), Potts Graffiti, Impact (see
-`fonts/README.md`).
+Bundled: Carter One, Lemon Milk (Bold, Medium), Potts Graffiti, Impact, Kabel, Luckiest Guy, Bangers,
+Lilita One, Titan One, and Bungee (see `fonts/README.md` for licenses).

@@ -51,6 +51,8 @@ function readParams() {
   const nameplate = el.baseShape.value === 'nameplate';
   return {
     text: el.text.value,
+    autoWrap: el.autoWrap.checked,
+    textGap: num(el.textGap, DEFAULTS.textGap, 0),
     align: el.align.value,
     lineSpacing: num(el.lineSpacing, 1, 0.1),
     lineFonts: lineFonts.map((key) => (key && fonts.get(key) ? fonts.get(key).font : null)),
@@ -72,6 +74,7 @@ function readParams() {
     baseOn: el.baseOn.value === '1',
     textOn: el.textOn.value === '1',
     borderW: num(el.borderW, DEFAULTS.borderW, 0),
+    borderInset: num(el.borderInset, DEFAULTS.borderInset, 0),
     plateRadius: num(el.plateRadius, DEFAULTS.plateRadius, 0),
     boneShaft: num(el.boneShaft, DEFAULTS.boneShaft * 100, 20) / 100,
     roundIn: num(el.roundIn, DEFAULTS.roundIn, 0),
@@ -187,6 +190,9 @@ function syncLabels() {
   for (const b of el.holeQuick.children) b.classList.toggle('active', Math.round(angle) === Number(b.dataset.angle));
   el.holeControls.style.opacity = el.holeEnabled.checked ? '1' : '0.45';
   el.hangControls.style.opacity = el.hangEnabled.checked ? '1' : '0.45';
+  el.textGapWrap.hidden = !el.autoWrap.checked;
+  el.autoWrapResult.hidden = !el.autoWrap.checked;
+  el.lineShifts.hidden = el.autoWrap.checked || shiftUi.size < 2;
   el.embedFrontFields.hidden = el.embedFrontHint.hidden = !el.embedFront.checked;
   // Show only the parts of the Back panel that apply, and only the rings that exist.
   const kind = el.backKind.value;
@@ -290,6 +296,7 @@ function rebuild(fixed = null) {
       return;
     }
     model = m;
+    el.autoWrapResult.textContent = 'Wrapped lines: ' + m.wrappedText.split('\n').join(' / ');
     preview.setModel(m, colors());
     const p = m.params;
     el.finalSize.textContent =
@@ -347,7 +354,7 @@ function setShift(i, x, y) {
 function renderLineShifts() {
   const lines = el.text.value.replace(/\r/g, '').split('\n');
   const used = lines.map((text, i) => [text.trim(), i]).filter(([text]) => text);
-  el.lineShifts.hidden = used.length < 2;
+  el.lineShifts.hidden = el.autoWrap.checked || used.length < 2;
   el.lineShiftList.replaceChildren();
   shiftUi.clear();
   if (used.length < 2) return;
@@ -456,7 +463,7 @@ function enableLineDragging() {
   preview.enableDrag({
     pick: (x, y) => {
       // Only with two or more lines; a single line is always re-centred, so moving it would just snap back.
-      const line = model && model.lines.length > 1 ? pickLine(model.lines, x, y) : -1;
+      const line = !el.autoWrap.checked && model && model.lines.length > 1 ? pickLine(model.lines, x, y) : -1;
       if (line !== -1) return line;
       return model && hitsArt(model.artPick, x, y) ? 'art' : -1;
     },
@@ -1008,7 +1015,7 @@ function initForm() {
   el.width.value = +(DEFAULTS.width / k).toFixed(3);
   el.height.value = +(DEFAULTS.height / k).toFixed(3);
   el.width.step = el.height.step = '0.05';
-  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'backDepth', 'backMargin', 'plateRadius', 'borderW', 'ring2W', 'ring2H', 'ring3W', 'ring3H', 'artLines']) {
+  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'backDepth', 'backMargin', 'plateRadius', 'borderW', 'borderInset', 'textGap', 'ring2W', 'ring2H', 'ring3W', 'ring3H', 'artLines']) {
     el[key].value = DEFAULTS[key];
   }
   el.boneShaft.value = DEFAULTS.boneShaft * 100;

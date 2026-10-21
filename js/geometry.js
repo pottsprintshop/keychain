@@ -9,7 +9,7 @@ import {
   CL, SCALE, SIMPLIFY_EPS, MIN_AREA, toPath, fromPath, polyArea, runClipper, unionTree, offsetTree, allPaths, outerPaths,
   treeToPolys, roundPaths, simplifyPolys, dropCollinear, polysToPaths, circlePoints, pathsBBox, rectPath, squarePath, plateRing,
 } from './clip.js';
-import { layoutText, widestLine, transformContours, flattenContour, bboxOfPolylines, NOMINAL } from './layout.js';
+import { layoutText, wrapCandidates, widestLine, transformContours, flattenContour, bboxOfPolylines, NOMINAL } from './layout.js';
 import { layoutBack } from './back.js';
 import { placeArt } from './art.js';
 
@@ -23,6 +23,8 @@ export const DEFAULTS = {
   width: 63.5, // 2.5"
   height: 38.1, // 1.5"
   fit: 'contain', // 'contain' keeps the font's proportions, 'stretch' fills the box
+  autoWrap: false, // choose word breaks for the largest fitted text; explicit newlines stay
+  textGap: 1.2, // mm from the outermost text/outline to the inside of the border, when auto-wrapping
   textSize: 1, // 0.05..1: the text as a fraction of the biggest size that fits (a smaller keychain if the base follows the text)
   sizeIncludesTab: true, // true: width x height counts the key hole tab; false: it is the body, and the tab sticks out beyond it
   textOn: true, // the layers can each be taken away (a keychain needs at least one)
@@ -36,6 +38,7 @@ export const DEFAULTS = {
   baseShape: 'text', // 'text' follows the letters; the rest fill the width x height: 'plate' (rounded rectangle), 'sports' (a long thin one), 'round' (ellipse), 'hex', 'dogbone'
   plateRadius: 3, // corner radius of the rectangle and hexagon bases (mm)
   boneShaft: 0.5, // dog bone: how thick the shaft is, as a fraction of the height
+  borderInset: 0, // mm of base between its outer edge and the border
   borderW: 0, // a raised rim this wide (mm) around the edge of the base, in the color of the layer above the base; 0 = none
   roundIn: 1.0, // base: fillet radius on inside (concave) corners, incl. where the key hole tab joins
   roundOut: 0, // base: rounding radius on outside (convex) corners
@@ -77,8 +80,8 @@ export const DEFAULTS = {
   // against the wall instead of standing off it by the head's own thickness.
   hangHeadDepth: 2.5, // mm, how much *further* than hangDepth the head pocket reaches
   hangHeadHeight: 16, // mm, taller than hangHeight so the head has room to seat wherever the shank catches
-  // Advanced: embed the text and every outline ring into the front instead of stacking them on top of it — merged
-  // into one flush inlay (in the outline's color), recessed from the front face, so the piece can be printed face
+  // Advanced: embed the text, outline rings and border as separately colored flush inlays instead of stacking
+  // them on top of the base, recessed from the front face, so the piece can be printed face
   // down (no raised tiers to overhang). Independent of, and combinable with, the back content and the wall hanger.
   embedFront: false,
   embedDepth: 0.6, // how deep the inlay is recessed into the base (mm)
@@ -312,7 +315,8 @@ export function buildKeychain(font, params) {
   // The front: the text, and/or the artwork placed above, below or instead of it. A logo pinned to the edge of a
   // plate (the Name plate's `artSizeMM`) is added later, once the plate's real mm size is known — it keeps its own
   // size and position in mm, independent of how the text is scaled to fit.
-  const text = tagText(font, p);
+  let text = tagText(font, p);
+  if (p.autoWrap) Object.assign(p, { lineFonts: [], lineShifts: [], lineShiftsY: [] });
   const edgeArt = p.art && p.artMode !== 'off' && p.artSizeMM > 0;
   let raw = p.art && p.artMode === 'only' && !edgeArt ? [] : layoutText(font, text, p);
   if (p.art && p.artMode !== 'off' && !edgeArt) raw = raw.concat(placeArt(p.art, raw, p));
@@ -337,9 +341,11 @@ export function buildKeychain(font, params) {
 
   const warnings = [];
   const rings = ringDefs(p);
-  const M = (rings.at(-1)?.offset ?? 0) + (hasBase ? p.baseMargin : 0); // how far the outside of the keychain is from the text
-  const coarse = raw.map((c) => flattenContour(c, FIT_TOL));
-  const ink = bboxOfPolylines(coarse);
+  const borderReach = p.borderW > 0 ? p.borderInset + p.borderW : 0;
+  const margin = p.autoWrap ? Math.max(p.baseMargin, borderReach + p.textGap) : p.baseMargin;
+  const M = (rings.at(-1)?.offset ?? 0) + (hasBase ? margin : 0); // how far the outside of the keychain is from the text
+  let coarse = raw.map((c) => flattenContour(c, FIT_TOL));
+  let ink = bboxOfPolylines(coarse);
   if (!(ink.w > 0) || !(ink.h > 0)) return null;
 
   const scaledCoarse = (sx, sy) =>
@@ -382,7 +388,7 @@ export function buildKeychain(font, params) {
   const fitInShape = () => {
     const { hw, hh } = shapeBox;
     const stretch = p.fit === 'stretch';
-    if (p.baseShape === 'plate' || p.baseShape === 'sports' || p.baseShape === 'nameplate') {
+    if (edgeArt || (!p.autoWrap && ['plate', 'sports', 'nameplate'].includes(p.baseShape))) {
       // A rectangle: the text box is the plate pulled in by M, minus the logo's reserved column if there is one.
       const iw = Math.max(0, 2 * (hw - M) - edgeReservedMM), ih = Math.max(0, 2 * (hh - M));
       const s = Math.min(iw / ink.w, ih / ink.h);
@@ -392,7 +398,9 @@ export function buildKeychain(font, params) {
     const half = (s) => (stretch ? [s * hw, s * hh] : [(s * ink.w) / 2, (s * ink.h) / 2]);
     const fits = (s) => {
       const [a, b] = half(s);
-      return inner.length > 0 && allPaths(runClipper(CL.ClipType.ctDifference, [rectPath(0, 0, a, b)], inner)).length === 0;
+      // Auto-wrap fits the actual letters so short lines can use the curved top and bottom of a plate.
+      const subject = p.autoWrap ? scaledCoarse(2 * a / ink.w, 2 * b / ink.h).map(toPath) : [rectPath(0, 0, a, b)];
+      return inner.length > 0 && allPaths(runClipper(CL.ClipType.ctDifference, subject, inner)).length === 0;
     };
     let lo = 0, hi = stretch ? 1 : Math.max((2 * hw) / ink.w, (2 * hh) / ink.h);
     for (let i = 0; i < 30; i++) {
@@ -423,6 +431,22 @@ export function buildKeychain(font, params) {
       if (Math.abs(dw) < 1e-4 && Math.abs(dh) < 1e-4) break;
     }
     shapeBox = { hw, hh };
+  }
+  if (p.autoWrap && !p.fixed && !(p.art && p.artMode === 'only' && !edgeArt)) {
+    let best = null;
+    for (const candidate of wrapCandidates(font, text)) {
+      let candidateRaw = layoutText(font, candidate, p);
+      if (p.art && p.artMode !== 'off' && !edgeArt) candidateRaw = candidateRaw.concat(placeArt(p.art, candidateRaw, p));
+      const candidateCoarse = candidateRaw.map((c) => flattenContour(c, FIT_TOL));
+      ink = bboxOfPolylines(candidateCoarse);
+      if (!(ink.w > 0) || !(ink.h > 0)) continue;
+      coarse = candidateCoarse;
+      const [x, y] = shaped ? fitInShape() : solve(2 * M, 2 * M);
+      const score = Math.min(x, y);
+      if (!best || score > best.score) best = { text: candidate, raw: candidateRaw, coarse: candidateCoarse, ink, score };
+    }
+    if (best) ({ text, raw, coarse, ink } = best);
+    else ink = bboxOfPolylines(coarse);
   }
   // Margins and the tab don't scale with the text, so iterate to a fixed point.
   let [sx, sy] = p.fixed ? [p.fixed.sx, p.fixed.sy] : shaped ? fitInShape() : solve(2 * M, 2 * M);
@@ -584,21 +608,20 @@ export function buildKeychain(font, params) {
   }
 
   // A raised rim around the edge of the base (tab included), as tall as the layer above the base. It is its own
-  // body, and the preview and exports color it like that layer. Doesn't apply once the front is embedded — the
-  // point there is a flush face, and the rim would stick out just as much as the tiers it replaces.
+  // body, and the preview and exports color it like that layer. Embedded borders join the front inlay below.
   let borderLayer = null;
-  if (hasBase && p.borderW > 0 && !embedActive) {
-    const edge = outerPaths(unionTree(basePaths));
+  if (hasBase && p.borderW > 0) {
+    const edge = allPaths(offsetTree(outerPaths(unionTree(polysToPaths(basePlain))), -p.borderInset));
     let band = runClipper(CL.ClipType.ctDifference, edge, allPaths(offsetTree(edge, -p.borderW)));
     if (hole) band = runClipper(CL.ClipType.ctDifference, allPaths(band), [toPath(circlePoints(hole.cx, hole.cy, hole.R + 0.4))]); // never over the hole
-    const polys = simplifyPolys(treeToPolys(band));
+    const polys = embedActive ? treeToPolys(band) : simplifyPolys(treeToPolys(band));
     if (polys.length) {
       borderLayer = { key: 'border', name: 'Border', polys, z0: z1, z1: z1 + (rings.at(-1)?.h ?? p.textH) };
       const above = rings.length ? ringPolys.at(-1) : p.textOn === false ? [] : textPolys;
       if (above.length && allPaths(runClipper(CL.ClipType.ctIntersection, polysToPaths(polys), polysToPaths(above))).length) {
-        warnings.push('The border runs into the layer next to it. Make the base margin wider than the border, or the border thinner.');
+        warnings.push('The border runs into the layer next to it. Increase the base margin, reduce the border width/inset, or enable auto-wrap to keep a gap.');
       }
-    }
+    } else warnings.push('The border does not fit — reduce its inset or width, or make the base bigger.');
   }
 
   // Recesses in the base, from either face: back content (QR/text/art) and/or a wall hanger notch, in the
@@ -669,8 +692,16 @@ export function buildKeychain(font, params) {
       embedTiers.push({ key: t.key, name: t.name, paths: inner.length ? allPaths(runClipper(CL.ClipType.ctDifference, t.paths, inner)) : t.paths });
       inner = t.paths;
     }
-    const outer = raw.length ? raw[raw.length - 1].paths : [];
-    embedCutAll = allPaths(runClipper(CL.ClipType.ctIntersection, outer, basePunchedPaths));
+    const outer = raw.length ? [...raw[raw.length - 1].paths] : [];
+    if (borderLayer) {
+      // Give the existing text/outline priority if a manually placed border overlaps it.
+      const borderPaths = allPaths(runClipper(CL.ClipType.ctDifference, polysToPaths(borderLayer.polys), outer));
+      embedTiers.push({ key: 'border', name: 'Border', paths: borderPaths });
+      outer.push(...borderPaths);
+      borderLayer = null;
+    }
+    // Clip against the same simplified boundary used by the base slabs, avoiding tiny open edges at the rim.
+    embedCutAll = allPaths(runClipper(CL.ClipType.ctIntersection, outer, polysToPaths(basePolys)));
     if (!embedCutAll.length) warnings.push("There's nothing to embed — turn on the text, or an outline ring, to give the front an inlay.");
     else embedDepthWanted = p.embedDepth;
   }
@@ -738,7 +769,7 @@ export function buildKeychain(font, params) {
         .map((t) => ({
           key: t.key,
           name: t.name,
-          polys: dropSliverHoles(dropCollinear(treeToPolys(unionTree(allPaths(runClipper(CL.ClipType.ctIntersection, t.paths, basePunchedPaths)))))),
+          polys: dropSliverHoles(dropCollinear(treeToPolys(unionTree(allPaths(runClipper(CL.ClipType.ctIntersection, t.paths, polysToPaths(basePolys))))))),
           z0: zFront,
           z1,
         }))
@@ -777,6 +808,7 @@ export function buildKeychain(font, params) {
 
   return {
     params: p,
+    wrappedText: text,
     lines,
     artPick,
     layout,

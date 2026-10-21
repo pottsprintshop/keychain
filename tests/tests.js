@@ -101,7 +101,7 @@ function decodeBack(model, baseColor, backColor, px = 14, plate = false) {
   try { return globalThis.jsQR(img.data, W, H, { inversionAttempts: 'dontInvert' }); } catch (e) { return null; }
 }
 
-// A minimal zip reader (stored entries): -> [{ name, size }].
+// A minimal zip reader (stored entries): -> [{ name, size, data }].
 function zipEntries(buf) {
   const dv = new DataView(buf.buffer, buf.byteOffset);
   const eocd = buf.length - 22;
@@ -110,7 +110,9 @@ function zipEntries(buf) {
   const out = [];
   for (let i = 0; i < n; i++) {
     const nl = dv.getUint16(off + 28, true), xl = dv.getUint16(off + 30, true), cl = dv.getUint16(off + 32, true);
-    out.push({ name: new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nl)), size: dv.getUint32(off + 24, true) });
+    const local = dv.getUint32(off + 42, true), size = dv.getUint32(off + 24, true);
+    const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+    out.push({ name: new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nl)), size, data: buf.subarray(start, start + size) });
     off += 46 + nl + xl + cl;
   }
   return out;
@@ -988,13 +990,65 @@ test('border inset, auto-wrap and clearance survive a shared design link', async
 });
 
 test('batch: parses lists and makes a zip with a summary', async () => {
-  const rows = parseBatch('Name,QR\nErich|Deutsch\n\n"A, B",https://x.co/b\nC\tsecond');
+  const rows = parseBatch('Name,QR\nErich|Deutsch\n\n"A, B",https://x.co/b\nC\tsecond', { csv: true });
   assert(rows.length === 3 && rows[0].text === 'Erich\nDeutsch' && rows[1].text === 'A, B' && rows[1].extra === 'https://x.co/b' && rows[2].extra === 'second', JSON.stringify(rows));
   const f = font(/Carter/);
-  const res = await runBatch({ items: parseBatch('Erich|Lizzie,https://x.co/e\nPotts'), font: f, baseParams: { ...build(f).params, backKind: 'qr', baseShape: 'plate', qrText: 'https://x.co/default' }, format: 'stl', colors: {}, printSettings: PRINT_DEFAULTS, buildStep: null, onProgress() {}, shouldCancel: () => false });
+  const res = await runBatch({ items: parseBatch('Erich|Lizzie,https://x.co/e\nPotts', { csv: true }), font: f, baseParams: { ...build(f).params, backKind: 'qr', baseShape: 'plate', qrText: 'https://x.co/default' }, format: 'stl', colors: {}, printSettings: PRINT_DEFAULTS, buildStep: null, onProgress() {}, shouldCancel: () => false });
   const entries = zipEntries(new Uint8Array(await res.blob.arrayBuffer()));
-  assert(res.count === 2 && entries.length === 9 && entries.some((e) => e.name === 'summary.csv'), `count ${res.count}, entries ${entries.length}`);
-  assert(entries.filter((e) => e.name.endsWith('.stl')).every((e) => e.size > 1000), 'every STL has content');
+  assert(res.count === 2 && entries.length === 3 && entries.some((e) => e.name === 'summary.csv'), `count ${res.count}, entries ${entries.length}`);
+  const stls = entries.filter((e) => e.name.endsWith('.stl'));
+  assert(stls.length === 2 && stls.every((e) => e.size > 1000 && !e.name.includes('/')), 'one combined STL per design at the ZIP root');
+  const summary = new TextDecoder().decode(entries.find((e) => e.name === 'summary.csv').data);
+  assert(stls.every((e) => summary.includes(e.name)), 'summary links to the combined files');
+  assert(res.filename === 'keychains-2-stl.zip' && res.blob.type === 'application/zip', 'multiple designs download as ZIP');
+});
+
+test('batch: literal commas, line breaks, spreadsheet columns, CSV quoting, and per-design fonts', () => {
+  const plain = parseBatch('Hello, World!\nName\nHe said "Hi, Mum!"\nErich | Deutsch\nText,Font');
+  assert(plain.length === 5 && plain[0].text === 'Hello, World!' && plain[0].extra === '', 'commas are literal by default');
+  assert(plain[1].text === 'Name' && plain[2].text === 'He said "Hi, Mum!"', 'ordinary names and quotes are not swallowed');
+  assert(plain[3].text === 'Erich\nDeutsch' && plain[4].text === 'Text,Font', 'pipe is a text line break; plain comma header is literal');
+  const tabbed = parseBatch('Text\tFont\tBack\nHello, World!\tbAnGeRs\thttps://example.com/a,b\nAnother\t\tCall me');
+  assert(tabbed.length === 2 && tabbed[0].text === 'Hello, World!' && tabbed[0].font === 'bAnGeRs' && tabbed[0].extra.endsWith('/a,b'), 'spreadsheet headers map columns and keep literal commas');
+  assert(!tabbed[1].font && tabbed[1].extra === 'Call me', 'blank font falls back to the main font');
+  const csv = parseBatch('Text,Font\n"Hello, World!",Bangers\n"Say ""Hi, Mum!""",Carter One', { csv: true });
+  assert(csv.length === 2 && csv[0].text === 'Hello, World!' && csv[0].font === 'Bangers', 'CSV font header');
+  assert(csv[1].text === 'Say "Hi, Mum!"', 'CSV escaped quotes');
+  const unheaded = parseBatch('Hello, World!\tBack, text\tBungee');
+  assert(unheaded[0].extra === 'Back, text' && unheaded[0].font === 'Bungee', 'unheaded third column supplies the font');
+});
+
+test('batch: a single design downloads directly as one STL containing every body and the selected font', async () => {
+  const carter = font(/Carter/), bangers = font(/Bangers/);
+  const common = { font: carter, fontsByName: new Map([['bangers', bangers]]), format: 'stl', colors: {}, printSettings: PRINT_DEFAULTS,
+    buildStep: null, onProgress() {}, shouldCancel: () => false };
+  for (const baseShape of ['plate', 'coaster']) {
+    const baseParams = build(carter, { baseShape, lineFonts: [carter], textGap: 2 }).params;
+    const item = { text: 'Hello, World!', extra: '', font: 'bAnGeRs' };
+    const res = await runBatch({ ...common, baseParams, items: [item] });
+    assert(res.filename.endsWith('.stl') && res.blob.type === 'model/stl' && res.count === 1, `${baseShape}: direct STL`);
+    const data = new Uint8Array(await res.blob.arrayBuffer());
+    const expected = buildKeychain(bangers, { ...baseParams, fixed: null, text: item.text, lineFonts: [] });
+    const parts = stlFilesFromModel(expected, 'expected');
+    const triangles = (b) => new DataView(b.buffer, b.byteOffset).getUint32(80, true);
+    assert(triangles(data) === parts.reduce((sum, p) => sum + triangles(p.data), 0), `${baseShape}: contains every body's triangles`);
+    assert(data.length === 84 + triangles(data) * 50, 'valid binary STL size');
+    let offset = 84;
+    for (const part of parts) {
+      assert(part.data.subarray(84).every((byte, i) => data[offset + i] === byte), `${baseShape} ${part.key}: coordinates and faces preserved exactly`);
+      offset += part.data.length - 84;
+    }
+    const volume = expected.layers.reduce((sum, l) => sum + netArea(l.polys) * (l.z1 - l.z0), 0);
+    near(stlStats(data).vol / volume, 1, 0.001, `${baseShape}: full assembled volume`);
+    assert(Array.isArray(res.warnings), 'direct download exposes print warnings without a CSV');
+  }
+  const baseParams = build(carter).params;
+  const fallback = await runBatch({ ...common, baseParams, items: [{ text: 'Hi', extra: '' }] });
+  assert(fallback.blob.type === 'model/stl', 'entries without Font use the main font');
+  const unknown = await runBatch({ ...common, baseParams, items: [{ text: 'Hi', extra: '', font: 'No Such Font' }] });
+  const files = zipEntries(new Uint8Array(await unknown.blob.arrayBuffer()));
+  assert(unknown.problems === 1 && files.length === 1 && files[0].name === 'summary.csv', 'unknown font does not silently export the wrong font');
+  assert(new TextDecoder().decode(files[0].data).includes('Unknown font: No Such Font'), 'unknown font is explained in the summary');
 });
 
 test('laser: DXF and SVG carry every layer', () => {

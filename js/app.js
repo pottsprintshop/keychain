@@ -775,15 +775,21 @@ const usesUnsharable = () => /^[ul]:/.test(el.font.value) || lineFonts.some((k) 
 // ---- Batch ---------------------------------------------------------------------------
 
 let batchCancelled = false;
+const batchFonts = () => new Map([...fonts.values()].map((f) => [f.name.toLowerCase(), f.font]));
 
 function updateBatchCount() {
-  const n = parseBatch(el.batchList.value).length;
+  const items = parseBatch(el.batchList.value, { csv: el.batchInputFormat.value === 'csv' });
+  const n = items.length;
+  const available = batchFonts();
+  const missing = items.find((item) => item.font && !available.has(item.font.toLowerCase()));
+  el.batchFontError.hidden = !missing;
+  el.batchFontError.textContent = missing ? `Unknown font: ${missing.font}. Use a name from the Font dropdown, or leave it blank for the main font.` : '';
   el.batchCount.textContent = n ? `${n} ${n === 1 ? 'keychain' : 'keychains'}` : '';
-  el.batchRun.disabled = !n || !fonts.get(el.font.value);
+  el.batchRun.disabled = !n || !fonts.get(el.font.value) || !!missing;
 }
 
 async function makeBatch() {
-  const items = parseBatch(el.batchList.value);
+  const items = parseBatch(el.batchList.value, { csv: el.batchInputFormat.value === 'csv' });
   const entry = fonts.get(el.font.value);
   if (!items.length || !entry) return;
   const format = el.batchFormat.value;
@@ -799,10 +805,11 @@ async function makeBatch() {
   try {
     const stepper = format === 'step' ? (await import('./step.js')).buildStep : null;
     const t0 = performance.now();
-    const { blob, count, problems } = await runBatch({
+    const { blob, filename, count, problems, warnings } = await runBatch({
       items,
       font: entry.font,
       baseParams: readParams(),
+      fontsByName: batchFonts(),
       format,
       colors: colors(),
       printSettings: printSettings(),
@@ -813,11 +820,13 @@ async function makeBatch() {
       },
       shouldCancel: () => batchCancelled,
     });
-    if (count || !batchCancelled) downloadBlob(blob, `keychains-${count}-${format}.zip`);
+    if (count || !batchCancelled) downloadBlob(blob, filename);
     el.batchProgress.value = 100;
     el.batchStatus.textContent =
-      `${batchCancelled ? 'Cancelled after' : 'Done:'} ${count} ${count === 1 ? 'keychain' : 'keychains'} in ${((performance.now() - t0) / 1000).toFixed(1)} s. summary.csv lists sizes, filament and any warnings` +
-      (problems ? ` (${problems} need a look).` : '.');
+      `${batchCancelled ? 'Cancelled after' : 'Done:'} ${count} ${count === 1 ? 'keychain' : 'keychains'} in ${((performance.now() - t0) / 1000).toFixed(1)} s.` +
+      (filename.endsWith('.zip') ? ' summary.csv lists sizes, filament and any warnings' : ' All bodies are included in one STL') +
+      (problems ? ` (${problems} need a look).` : '.') +
+      (!filename.endsWith('.zip') && warnings.length ? ' ' + warnings.join(' ') : '');
   } catch (err) {
     console.error(err);
     el.batchStatus.textContent = 'The batch failed: ' + err.message;
@@ -829,11 +838,13 @@ async function makeBatch() {
 
 function initBatch() {
   el.batchList.addEventListener('input', updateBatchCount);
+  el.batchInputFormat.addEventListener('change', updateBatchCount);
   el.batchLoad.addEventListener('click', () => el.batchFile.click());
   el.batchFile.addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     el.batchList.value = await file.text();
+    el.batchInputFormat.value = /\.csv$/i.test(file.name) ? 'csv' : 'text';
     e.target.value = '';
     updateBatchCount();
   });
@@ -925,6 +936,7 @@ function addFontOption(value, label, font) {
   opt.value = value;
   opt.textContent = label;
   el.font.appendChild(opt);
+  updateBatchCount();
 }
 
 async function loadBundledFonts() {

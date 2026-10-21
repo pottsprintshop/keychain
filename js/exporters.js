@@ -31,7 +31,11 @@ export function stlFromGeometry(geometry) {
 
 // Several geometries -> one binary STL (used when a body is built from more than one slab).
 export function stlFromGeometries(geometries) {
-  const parts = geometries.map(stlFromGeometry);
+  return combineStls(geometries.map(stlFromGeometry));
+}
+
+// Keep all shells in their assembled coordinates in one binary STL; STL has no body names or colors.
+export function combineStls(parts) {
   const counts = parts.map((b) => new DataView(b.buffer, b.byteOffset).getUint32(80, true));
   const total = counts.reduce((a, b) => a + b, 0);
   const out = new Uint8Array(84 + total * 50);

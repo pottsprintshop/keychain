@@ -163,10 +163,39 @@ aren't in a link.
 
 ## Batch
 
-The **Batch** panel makes many keychains with the current design: one per line, `|` for a line break, and a
-tab or comma then the QR (or back) text. Paste from a spreadsheet or load a CSV. You get one zip: a folder
-of STL files per keychain (or one STEP / DXF / SVG file each) and a `summary.csv` with sizes, filament
-grams, cost and any warnings. STEP takes about 10 seconds each, so it's limited to 30.
+The **Batch** panel applies the current design to a list, one design per input line.
+
+| Input | Meaning |
+| --- | --- |
+| Enter / a new input line | Another design |
+| `Erich\|Deutsch` | One design, with `Erich` and `Deutsch` on two text lines |
+| `Hello, World!` in Text list mode | One design including the comma |
+| A Tab between two spreadsheet columns | Front text, then optional QR/back text |
+| `"Hello, World!",https://example.com` in CSV mode | Front text including a comma, then QR/back content |
+
+Text list is the default: commas and quotation marks are ordinary text. Choose **CSV** explicitly when
+commas should separate columns. CSV fields containing commas must be quoted; double an internal quotation
+mark (`""`). Use `|` for line breaks inside a field. Recognized two-column headers such as `Text,QR` are
+skipped. An optional **Font** column selects the font for each design, using a name from the Font dropdown
+(case-insensitive). For example:
+
+```csv
+Text,Font
+"Hello, World!",Bangers
+I WAS THE|ADULT|SUPERVISION,Carter One
+```
+
+The same headers work with Tab-separated spreadsheet pastes. A blank Font cell uses the main font; an explicit
+Font applies to all lines of that design, replacing manual per-line font overrides. Uploaded fonts must already
+be loaded in the current browser session. Unknown fonts are flagged before export. Include an optional **Back**
+column for QR/back content. Without a header, columns are Text, Back, Font. Choose QR code or Text in the Back panel to use the Back column; it is ignored when
+Back is set to Nothing. Loading a `.csv` file selects CSV mode; a `.txt` file selects Text list mode.
+
+For a single STL design, the download is a direct `.stl` file. For multiple designs, the download is one ZIP
+containing **one STL per design, with all bodies in their assembled positions**, plus `summary.csv` with sizes, filament grams, cost, warnings, and the file name. STL retains geometry but
+has no body names or color assignments. Choose STEP for named, colored bodies (or DXF/SVG for laser output).
+STEP takes about 10 seconds per design and is limited to 30. The regular single-design STL download still
+provides separate body files.
 
 ## Print check
 

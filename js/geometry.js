@@ -98,10 +98,16 @@ export const DEFAULTS = {
   artOffsetYmm: 0,
 };
 
+export const COASTER_DEFAULTS = {
+  width: 95, height: 95, baseH: 3, plateRadius: 12.7,
+  borderW: 1.2, borderInset: 1.2, embedFront: true, embedDepth: 0.4,
+  outline: 1.2, holeEnabled: false,
+};
+
 // ---- Base shapes -------------------------------------------------------------
 
 // Bases that fill the requested width x height (everything except 'text', which follows the letters).
-export const PLATE_SHAPES = ['plate', 'sports', 'round', 'hex', 'dogbone', 'nameplate'];
+export const PLATE_SHAPES = ['plate', 'sports', 'round', 'hex', 'dogbone', 'nameplate', 'coaster'];
 
 function ellipsePoints(a, b, tol = 0.004) {
   const R = Math.max(a, b);
@@ -308,7 +314,7 @@ export function tagText(font, p) {
 }
 
 export function buildKeychain(font, params) {
-  const p = { ...DEFAULTS, ...params };
+  const p = { ...DEFAULTS, ...(params?.baseShape === 'coaster' ? COASTER_DEFAULTS : {}), ...params };
   // Without a base there is nothing to bore a key hole in, recess a back into, or put a border on.
   const hasBase = p.baseOn !== false;
   if (!hasBase) Object.assign(p, { holeEnabled: false, backKind: 'none', borderW: 0, hangEnabled: false });
@@ -388,7 +394,7 @@ export function buildKeychain(font, params) {
   const fitInShape = () => {
     const { hw, hh } = shapeBox;
     const stretch = p.fit === 'stretch';
-    if (edgeArt || (!p.autoWrap && ['plate', 'sports', 'nameplate'].includes(p.baseShape))) {
+    if (edgeArt || (!p.autoWrap && ['plate', 'sports', 'nameplate', 'coaster'].includes(p.baseShape))) {
       // A rectangle: the text box is the plate pulled in by M, minus the logo's reserved column if there is one.
       const iw = Math.max(0, 2 * (hw - M) - edgeReservedMM), ih = Math.max(0, 2 * (hh - M));
       const s = Math.min(iw / ink.w, ih / ink.h);
@@ -443,7 +449,13 @@ export function buildKeychain(font, params) {
       coarse = candidateCoarse;
       const [x, y] = shaped ? fitInShape() : solve(2 * M, 2 * M);
       const score = Math.min(x, y);
-      if (!best || score > best.score) best = { text: candidate, raw: candidateRaw, coarse: candidateCoarse, ink, score };
+      const count = candidate.split('\n').length;
+      const balance = candidate.split('\n').reduce((sum, line) => sum + font.getAdvanceWidth(line, NOMINAL) ** 2, 0);
+      // Tiny fit differences must not turn a three-line phrase into a word-per-line tower.
+      const tied = best && Math.abs(score - best.score) * NOMINAL < 0.01;
+      if (!best || (!tied && score > best.score) || (tied && (count < best.count || (count === best.count && balance < best.balance)))) {
+        best = { text: candidate, raw: candidateRaw, coarse: candidateCoarse, ink, score, count, balance };
+      }
     }
     if (best) ({ text, raw, coarse, ink } = best);
     else ink = bboxOfPolylines(coarse);
@@ -678,6 +690,16 @@ export function buildKeychain(font, params) {
         ? `Can't make that QR code: ${err.message || err}. Try shorter text or lower error correction.`
         : `Can't make the back: ${err.message || err}.`);
     }
+  }
+
+  if (hasBase && p.baseShape === 'coaster') {
+    const recess = [toPath(circlePoints(bodyBounds.cx, bodyBounds.cy, 89.5 / 2, 0.004))];
+    const clipped = allPaths(runClipper(CL.ClipType.ctIntersection, recess, polysToPaths(basePolys)));
+    if (allPaths(runClipper(CL.ClipType.ctDifference, recess, polysToPaths(basePolys))).length) {
+      warnings.push('The 89.5 mm coaster recess reaches the base edge — restore the 95 mm coaster size.');
+    }
+    backCutAll = allPaths(unionTree([...backCutAll, ...clipped]));
+    backDepthWanted = Math.max(backDepthWanted, 1);
   }
 
   // Each tier keeps its own color, innermost (text) to outermost (the last ring) — same nesting the raised

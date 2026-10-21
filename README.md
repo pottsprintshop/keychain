@@ -70,6 +70,10 @@ Default size is **2.5 × 1.5 in**; the text is scaled to fit. Every number above
   the border (for example 1.2 mm); its width stays unchanged. In face-down mode it is recessed flush. The dog bone starts with the key hole in the
   middle of its top edge, between the knobs, and a 0.8 mm border. Picking another shape moves these to
   that shape's usual values unless you've changed them yourself.
+- **Coaster** — a 95 × 95 × 3 mm rounded plate with 12.7 mm corners, a 1.2 mm border inset
+  1.2 mm from the edge, and text/outline embedded 0.4 mm deep (outline offset 1.2 mm). No key hole
+  by default. A centered circular recess, 89.5 mm in diameter and 1 mm deep, is cut into its underside.
+  Selecting Coaster applies these preset dimensions and switches size units to mm.
 - **Sports tag** — a long, thin rectangle (4 × 0.75 in, key hole tab included) with a 0.8 mm border,
   meant for a last name and a sport icon: tennis racquet, baseball, football or soccer ball, drawn
   beside the text and as tall as it. An optional **Number** (a jersey number, up to six characters)

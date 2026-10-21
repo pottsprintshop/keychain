@@ -444,6 +444,45 @@ test('auto-wrap fits larger text and respects the border clearance on each plate
   assert(manual.wrappedText === phrase, 'manual mode leaves text unchanged');
 });
 
+test('95 mm rounded plate wraps the example onto three lines instead of a five-word tower', () => {
+  const m = build(font(/Carter/), { text: 'I WAS THE ADULT SUPERVISION', autoWrap: true,
+    width: 95, height: 95, baseShape: 'plate', plateRadius: 12.7, borderW: 1.2, borderInset: 1.2,
+    textGap: 2, outline: 1.2, embedFront: true, holeEnabled: false });
+  assert(m.wrappedText.split('\n').length === 3, `expected three lines, got ${m.wrappedText}`);
+  assert(m.wrappedText.replace(/\s+/g, ' ') === 'I WAS THE ADULT SUPERVISION', 'words stay in order');
+});
+
+test('Coaster preset has the requested dimensions, flush front, and 89.5 x 1 mm underside recess', () => {
+  const m = build(font(/Carter/), { baseShape: 'coaster', autoWrap: true });
+  for (const [key, value] of Object.entries({ width: 95, height: 95, baseH: 3, plateRadius: 12.7,
+    borderW: 1.2, borderInset: 1.2, embedDepth: 0.4, outline: 1.2 })) near(m.params[key], value, 1e-9, key);
+  assert(m.params.embedFront && !m.params.holeEnabled, 'embedded, no key hole by default');
+  near(m.size.w, 95, 0.01, 'overall width');
+  near(m.size.h, 95, 0.01, 'overall height');
+  near(m.size.d, 3, 1e-9, 'overall thickness');
+  const cut = m.baseCuts.find((c) => c.faceDown);
+  near(cut.z, 1, 1e-9, 'recess depth');
+  const bb = bboxOf(cut.polys);
+  near(bb.x1 - bb.x0, 89.5, 0.01, 'recess diameter X');
+  near(bb.y1 - bb.y0, 89.5, 0.01, 'recess diameter Y');
+  near(bb.x0 + bb.x1, 0, 0.01, 'recess centered X');
+  near(bb.y0 + bb.y1, 0, 0.01, 'recess centered Y');
+  near(netArea(cut.polys), Math.PI * (89.5 / 2) ** 2, 1, 'circular recess area');
+  for (const l of m.layers.filter((l) => l.key !== 'base')) {
+    near(l.z0, 2.6, 1e-9, `${l.key}: inlay floor`);
+    near(l.z1, 3, 1e-9, `${l.key}: flush front`);
+  }
+  const volume = m.layers.reduce((sum, l) => sum + volumeOf({ layers: [l] }, l.key), 0);
+  near(volume, netArea(m.exact.basePlain) * 3 - netArea(cut.polys), 0.2, 'only the underside recess removes total material');
+  for (const file of stlFilesFromModel(m, 'coaster')) {
+    const stats = stlStats(file.data);
+    assert(stats.open === 0, `${file.key}: ${stats.open} open edges`);
+    near(stats.vol / volumeOf(m, file.key), 1, 0.001, `${file.key}: STL volume`);
+  }
+  near(netArea(laserLayers(m).find((l) => l.key === 'base').polys), netArea(m.exact.basePlain), 0.1, 'laser keeps full outer base');
+  assert(!m.warnings.length, m.warnings.join(' | '));
+});
+
 test('a wall hanger is a sawtooth entry slot plus a deeper, wider head pocket, recessed into the back', () => {
   const f = font(/Carter/);
   for (const shape of ['plate', 'round', 'text']) {
@@ -1039,6 +1078,10 @@ async function stepCheck(m, label, { maxMB, arcs = true, exactText = false } = {
   if (maxMB) assert(mb <= maxMB, `${label}: ${mb.toFixed(1)} MB is over the ${maxMB} MB budget`);
   return `${label}: ${mb.toFixed(1)} MB, ${res.report.edges.points} points -> ${res.report.edges.segments} edges`;
 }
+// Complex front pockets can use the validated polygon fallback; volume and bodies must still match.
+test('STEP: Coaster with front inlays and circular underside recess', () => stepCheck(build(font(/Carter/), {
+  baseShape: 'coaster', text: 'I WAS THE ADULT SUPERVISION', autoWrap: true,
+}), 'coaster', { maxMB: 8, arcs: false }), { step: true });
 test('STEP: flush inset border with auto-wrapped text', () => stepCheck(build(font(/Bangers/), {
   text: 'I WAS THE ADULT SUPERVISION', baseShape: 'round', width: 101.6, height: 101.6,
   holeEnabled: false, outline: 1.2, borderW: 1.2, borderInset: 1.2, embedFront: true, autoWrap: true, textGap: 1.2,

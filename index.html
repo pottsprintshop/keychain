@@ -335,17 +335,40 @@
 
     <section class="panel">
       <h2>Batch</h2>
-      <p class="hint">Make many keychains at once with the design above. One per line; <strong>|</strong> is a line break; a tab or comma, then the QR (or back) text.</p>
-      <textarea id="batchList" rows="5" spellcheck="false" placeholder="Erich|Lizzie|Potts|Butters" data-static data-noshare></textarea>
+      <p class="hint">Make many designs using the settings above. Each line in this box makes one design.</p>
+      <div class="fields">
+        <label class="grow">Input format
+          <select id="batchInputFormat" data-static data-noshare>
+            <option value="text" selected>Text list — commas are text</option>
+            <option value="csv">CSV — text, back content, font</option>
+          </select>
+        </label>
+      </div>
+      <textarea id="batchList" rows="5" spellcheck="false" aria-label="Batch designs, one per line" placeholder="Hello, World!&#10;I WAS THE|ADULT|SUPERVISION" data-static data-noshare></textarea>
+      <ul class="hint">
+        <li><strong>Enter:</strong> start another design.</li>
+        <li><strong>| (vertical bar):</strong> start a new text line on the same design. <code>Erich|Deutsch</code> makes one design with two lines.</li>
+        <li><strong>Comma:</strong> prints normally in Text list mode. <code>Hello, World!</code> makes one design including the comma.</li>
+        <li><strong>Tab:</strong> separates front text from optional QR/back text when pasting two spreadsheet columns. Choose QR code or Text in the Back panel to use that second column; otherwise it is ignored.</li>
+      </ul>
+      <p class="hint">For a font per design, use <strong>Text</strong> and <strong>Font</strong> column headers in CSV mode or a spreadsheet paste. Blank Font cells use the main font.</p>
+      <p class="hint" id="batchFontError" role="alert" hidden></p>
+      <details class="nerd-menu">
+        <summary>Fonts and CSV examples</summary>
+        <p class="hint">Use a name from the Font dropdown, such as Bangers or Carter One (case-insensitive). A Font value applies to every text line in that design. Uploaded fonts must already be loaded in this session. An optional <strong>Back</strong> column supplies QR/back content. Without headers, columns are Text, Back, Font.</p>
+        <p class="hint">Choose CSV mode for comma-separated columns. Quote text containing a comma; double a quotation mark inside a quoted field. Use <code>|</code> for line breaks within a field.</p>
+        <p class="hint"><code>&quot;Hello, World!&quot;,https://example.com</code> makes one design with <strong>Hello, World!</strong> on the front and the link as its QR/back content.</p>
+        <p class="hint"><code>Text,Font</code><br><code>&quot;Hello, World!&quot;,Bangers</code><br><code>I WAS THE|ADULT|SUPERVISION,Carter One</code></p>
+      </details>
       <div class="control-row">
-        <button type="button" id="batchLoad" class="secondary">Load a CSV&hellip;</button>
+        <button type="button" id="batchLoad" class="secondary">Load CSV / text&hellip;</button>
         <input type="file" id="batchFile" accept=".csv,.txt,text/csv,text/plain" hidden data-static data-noshare>
         <span id="batchCount" class="hint"></span>
       </div>
       <div class="fields">
         <label class="grow">Make
           <select id="batchFormat" data-static data-noshare>
-            <option value="stl" selected>STL &mdash; a folder per keychain</option>
+            <option value="stl" selected>STL &mdash; one file per design</option>
             <option value="step">STEP &mdash; about 10 s each</option>
             <option value="dxf">DXF &mdash; laser, one file each</option>
             <option value="svg">SVG &mdash; laser, one file each</option>
@@ -354,6 +377,7 @@
         <button type="button" id="batchRun" class="field-btn go" disabled>Make them all</button>
         <button type="button" id="batchCancel" class="secondary field-btn" hidden>Cancel</button>
       </div>
+      <p class="hint">One STL design downloads directly as .stl. Multiple designs download as a ZIP with one file per design and summary.csv. Each STL contains all bodies in place, without color assignments or body names. Choose STEP to retain named, colored bodies.</p>
       <progress id="batchProgress" max="100" value="0" hidden></progress>
       <p class="hint" id="batchStatus"></p>
     </section>

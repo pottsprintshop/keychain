@@ -1,11 +1,12 @@
 // Batch: many keychains from a list. Each line is one keychain (text, then optionally the QR or back text),
-// built with the current design settings, and everything lands in one zip with a summary.csv.
+// built with the current design settings. A single STL downloads directly; multiple designs use a ZIP.
 
 import { buildKeychain } from './geometry.js';
 import { stlFilesFromModel } from './mesh.js';
-import { zipStore, slug } from './exporters.js';
+import { zipStore, slug, combineStls } from './exporters.js';
 import { estimate, analyze } from './print.js';
 import { dxfFromModel, svgFromModel } from './laser.js';
+import { fontDisplayName } from './layout.js';
 
 // One CSV line -> cells. Handles "quoted, with commas" and "" escapes.
 function parseCsvLine(line) {
@@ -25,18 +26,26 @@ function parseCsvLine(line) {
   return cells;
 }
 
-// Text -> [{ text, extra }]. Tabs (a spreadsheet paste) or commas separate the columns; `|` is a line break.
-export function parseBatch(text) {
+// Text lists keep commas literal. Tabs separate optional back content; CSV mode also accepts comma columns.
+export function parseBatch(text, { csv = false } = {}) {
   const rows = [];
+  let columns = null;
   for (const raw of String(text).split(/\r?\n/)) {
     if (!raw.trim()) continue;
     const unquote = (c) => (/^"[\s\S]*"$/.test(c.trim()) ? c.trim().slice(1, -1).replace(/""/g, '"') : c);
-    const cells = raw.includes('\t') ? raw.split('\t').map(unquote) : parseCsvLine(raw);
-    const first = (cells[0] || '').trim();
+    const cells = raw.includes('\t') ? raw.split('\t').map(unquote) : csv ? parseCsvLine(raw) : [raw];
+    const names = cells.map((c) => c.trim().toLowerCase()
+      .replace(/^(name|names|label|title)$/, 'text').replace(/^(qr|url|back|back text)$/, 'extra'));
+    if (!columns && !rows.length && names.length > 1 && names.includes('text') &&
+        names.every((n) => ['text', 'extra', 'font'].includes(n)) && new Set(names).size === names.length) {
+      columns = Object.fromEntries(names.map((name, i) => [name, i]));
+      continue;
+    }
+    const first = (cells[columns ? columns.text : 0] || '').trim();
     if (!first) continue;
-    if (!rows.length && /^(name|names|text|label|title)$/i.test(first)) continue; // a header row
     const lines = (s) => s.trim().replace(/\s*\|\s*/g, '\n');
-    rows.push({ text: lines(first), extra: lines(cells[1] || '') });
+    const font = (cells[columns ? columns.font : 2] || '').trim();
+    rows.push({ text: lines(first), extra: lines(cells[columns ? columns.extra : 1] || ''), ...(font ? { font } : {}) });
   }
   return rows;
 }
@@ -46,12 +55,13 @@ const csvCell = (v) => {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
-// Build every item and return { blob, count, problems }. `onProgress(done, total, item)` and `shouldCancel()`
+// Build every item; one STL design downloads directly, multiple designs use a ZIP with summary.csv. `onProgress(done, total, item)` and `shouldCancel()`
 // keep the page responsive; STEP goes through the CAD worker (about 10 s each), STL is nearly instant.
-export async function runBatch({ items, font, baseParams, format, colors, printSettings, buildStep, onProgress, shouldCancel }) {
+export async function runBatch({ items, font, baseParams, format, colors, printSettings, buildStep, onProgress, shouldCancel, fontsByName = new Map() }) {
   const files = [];
-  const rows = [['#', 'text', 'extra', 'width_mm', 'height_mm', 'thickness_mm', 'grams', 'cost_usd', 'warnings', 'file']];
+  const rows = [['#', 'text', 'extra', 'font', 'width_mm', 'height_mm', 'thickness_mm', 'grams', 'cost_usd', 'warnings', 'file']];
   let problems = 0;
+  let singleWarnings = [];
   for (let i = 0; i < items.length; i++) {
     if (shouldCancel()) break;
     const item = items[i];
@@ -61,10 +71,12 @@ export async function runBatch({ items, font, baseParams, format, colors, printS
       if (baseParams.backKind === 'qr') params.qrText = item.extra;
       else if (baseParams.backKind === 'text') params.backText = item.extra;
     }
-    const model = buildKeychain(font, params);
+    const selectedFont = item.font ? fontsByName.get(item.font.toLowerCase()) : font;
+    if (item.font) params.lineFonts = []; // an explicit font applies to the whole batch entry
+    const model = selectedFont ? buildKeychain(selectedFont, params) : null;
     const label = item.text.replace(/\n/g, ' ');
     if (!model) {
-      rows.push([i + 1, label, item.extra, '', '', '', '', '', 'nothing to build', '']);
+      rows.push([i + 1, label, item.extra, item.font || fontDisplayName(font), '', '', '', '', '', selectedFont ? 'nothing to build' : `Unknown font: ${item.font}`, '']);
       problems++;
       continue;
     }
@@ -79,15 +91,22 @@ export async function runBatch({ items, font, baseParams, format, colors, printS
       files.push({ name: `${name}.${format}`, data: new TextEncoder().encode(text) });
       where = `${name}.${format}`;
     } else {
-      for (const f of stlFilesFromModel(model, name)) files.push({ name: `${name}/${f.name}`, data: f.data });
-      where = `${name}/`;
+      where = `${name}.stl`;
+      files.push({ name: where, data: combineStls(stlFilesFromModel(model, name).map((f) => f.data)) });
     }
     const est = estimate(model, printSettings);
     const warnings = [...model.warnings, ...analyze(model, printSettings).warnings];
     if (warnings.length) problems++;
-    rows.push([i + 1, label, item.extra, model.size.w.toFixed(1), model.size.h.toFixed(1), model.size.d.toFixed(1), est.billed.toFixed(2), est.cost.toFixed(2), warnings.join(' '), where]);
+    if (items.length === 1) singleWarnings = warnings;
+    rows.push([i + 1, label, item.extra, item.font || fontDisplayName(selectedFont), model.size.w.toFixed(1), model.size.h.toFixed(1), model.size.d.toFixed(1), est.billed.toFixed(2), est.cost.toFixed(2), warnings.join(' '), where]);
     await new Promise((r) => setTimeout(r, 0)); // let the page breathe
   }
-  files.push({ name: 'summary.csv', data: new TextEncoder().encode(rows.map((r) => r.map(csvCell).join(',')).join('\n') + '\n') });
-  return { blob: zipStore(files), count: rows.length - 1, problems };
+  const singleStl = format === 'stl' && items.length === 1 && files.length === 1;
+  if (!singleStl) files.push({ name: 'summary.csv', data: new TextEncoder().encode(rows.map((r) => r.map(csvCell).join(',')).join('\n') + '\n') });
+  const count = rows.length - 1;
+  return {
+    blob: singleStl ? new Blob([files[0].data], { type: 'model/stl' }) : zipStore(files),
+    filename: singleStl ? files[0].name : `keychains-${count}-${format}.zip`,
+    count, problems, warnings: singleWarnings,
+  };
 }

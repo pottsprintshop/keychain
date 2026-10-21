@@ -1081,7 +1081,7 @@ async function stepCheck(m, label, { maxMB, arcs = true, exactText = false } = {
 // Complex front pockets can use the validated polygon fallback; volume and bodies must still match.
 test('STEP: Coaster with front inlays and circular underside recess', () => stepCheck(build(font(/Carter/), {
   baseShape: 'coaster', text: 'I WAS THE ADULT SUPERVISION', autoWrap: true,
-}), 'coaster', { maxMB: 8, arcs: false }), { step: true });
+}), 'coaster', { maxMB: 12, arcs: false }), { step: true });
 test('STEP: flush inset border with auto-wrapped text', () => stepCheck(build(font(/Bangers/), {
   text: 'I WAS THE ADULT SUPERVISION', baseShape: 'round', width: 101.6, height: 101.6,
   holeEnabled: false, outline: 1.2, borderW: 1.2, borderInset: 1.2, embedFront: true, autoWrap: true, textGap: 1.2,

@@ -1,8 +1,13 @@
 [
-  { "name": "Carter One", "file": "CarterOne-Regular.ttf" },
-  { "name": "Lemon Milk Bold", "file": "LEMONMILK-Bold.otf" },
-  { "name": "Lemon Milk Medium", "file": "LEMONMILK-Medium.otf" },
-  { "name": "Potts Graffiti", "file": "PottsGraffiti-Regular.ttf" },
-  { "name": "Impact", "file": "Impact.ttf" },
-  { "name": "Kabel", "file": "Kabel.ttf" }
+  {"name": "Carter One", "file": "CarterOne-Regular.ttf"},
+  {"name": "Lemon Milk Bold", "file": "LEMONMILK-Bold.otf"},
+  {"name": "Lemon Milk Medium", "file": "LEMONMILK-Medium.otf"},
+  {"name": "Potts Graffiti", "file": "PottsGraffiti-Regular.ttf"},
+  {"name": "Impact", "file": "Impact.ttf"},
+  {"name": "Kabel", "file": "Kabel.ttf"},
+  {"name": "Luckiest Guy", "file": "LuckiestGuy-Regular.ttf"},
+  {"name": "Bangers", "file": "Bangers-Regular.ttf"},
+  {"name": "Lilita One", "file": "LilitaOne-Regular.ttf"},
+  {"name": "Titan One", "file": "TitanOne-Regular.ttf"},
+  {"name": "Bungee", "file": "Bungee-Regular.ttf"}
 ]

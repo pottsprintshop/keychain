@@ -1,11 +1,11 @@
 // Self-test: builds keychains and checks them. Open tests/index.html (served over http) and press Run all.
 // Results are also left on window.__testResults for scripts.
 
-import { parseFont, layoutText, flattenContour, bboxOfPolylines } from '../js/layout.js';
+import { parseFont, layoutText, wrapCandidates, flattenContour, bboxOfPolylines } from '../js/layout.js';
 import { buildKeychain, tagText } from '../js/geometry.js';
 import { stlFilesFromModel } from '../js/mesh.js';
 import { estimate, analyze, PRINT_DEFAULTS } from '../js/print.js';
-import { dxfFromModel, svgFromModel } from '../js/laser.js';
+import { laserLayers, dxfFromModel, svgFromModel } from '../js/laser.js';
 import { parseBatch, runBatch } from '../js/batch.js';
 import { snapshot, diffState, toQuery, parseQuery, applyValues } from '../js/state.js';
 import { loadArtSource, traceArt, placeArt } from '../js/art.js';
@@ -134,6 +134,11 @@ test('the bundled fonts load', async () => {
   fonts = new Map();
   for (const f of list) fonts.set(f.name, parseFont(await (await fetch('../fonts/' + f.file)).arrayBuffer()));
   assert(fonts.size >= 4, `expected 4+ fonts, got ${fonts.size}`);
+  for (const name of ['Luckiest Guy', 'Bangers', 'Lilita One', 'Titan One', 'Bungee']) {
+    assert(fonts.has(name), `${name}: bundled`);
+    const m = build(fonts.get(name), { text: 'ADULT SUPERVISION', baseShape: 'round', holeEnabled: false, autoWrap: true });
+    assert(m && m.layers.some((l) => l.key === 'text'), `${name}: makes printable text`);
+  }
   return `${fonts.size} fonts`;
 });
 
@@ -375,6 +380,107 @@ test('a border is a raised rim along the edge of the base, as tall as the layer 
   assert(!build(f, { borderW: 0 }).layers.some((l) => l.key === 'border'), 'no border by default');
   const wide = build(f, { baseMargin: 0.5, borderW: 1.5 });
   assert(wide.warnings.some((w) => /border/.test(w)), 'a border that runs into the outline is flagged');
+});
+
+test('inset borders keep their width; face-down borders are flush, separate, closed inlays', () => {
+  const f = font(/Carter/);
+  for (const inset of [0, 1.2]) {
+    const params = { text: 'I WAS THE\nADULT\nSUPERVISION', width: 101.6, height: 101.6, baseShape: 'round',
+      outline: 1.2, borderW: 1.2, borderInset: inset, holeEnabled: false };
+    const raised = build(f, params);
+    const flush = build(f, { ...params, embedFront: true });
+    const border = flush.layers.find((l) => l.key === 'border');
+    assert(border, `${inset}: border survives embedding`);
+    near(border.z1, flush.params.baseH, 1e-9, 'border is flush');
+    near(border.z1 - border.z0, flush.params.embedDepth, 1e-9, 'border uses the front recess depth');
+    near(netArea(border.polys) / netArea(raised.layers.find((l) => l.key === 'border').polys), 1, 0.002, 'same footprint within polygon simplification tolerance');
+    const bb = bboxOf(border.polys);
+    near(bb.x1, 50.8 - inset, 0.025, 'inset from outside wall');
+    const ib = bboxOf(border.polys.map((p) => ({ outer: p.holes[0], holes: [] })));
+    near(bb.x1 - ib.x1, 1.2, 0.025, 'border width remains 1.2 mm');
+    near(netArea(laserLayers(flush).find((l) => l.key === 'base').polys), netArea(flush.exact.basePlain), 0.1, 'laser base keeps the full cut outline');
+    assert(laserLayers(flush).some((l) => l.key === 'border'), 'laser retains its own border layer');
+    const front = flush.layers.filter((l) => l.z1 === flush.params.baseH);
+    near(front.reduce((a, l) => a + netArea(l.polys), 0), netArea(flush.exact.basePlain), 0.1, 'front is filled with no duplicated material');
+    for (let i = 0; i < front.length; i++) for (let j = i + 1; j < front.length; j++) {
+      const paths = (l) => l.polys.flatMap((p) => [p.outer, ...p.holes]).map(toPath);
+      near(netArea(treeToPolys(runClipper(CL.ClipType.ctIntersection, paths(front[i]), paths(front[j])))), 0, 0.02, 'front colors do not overlap');
+    }
+    for (const file of stlFilesFromModel(flush, 'border')) {
+      const stats = stlStats(file.data);
+      assert(stats.open === 0, `${inset} ${file.key}: ${stats.open} open edges`);
+      near(stats.vol / volumeOf(flush, file.key), 1, 0.001, `${file.key}: STL volume`);
+    }
+  }
+  assert(build(f, { baseShape: 'plate', borderW: 1, borderInset: 100 }).warnings.some((w) => /border does not fit/.test(w)), 'impossible inset is reported');
+});
+
+test('auto-wrap fits larger text and respects the border clearance on each plate shape', () => {
+  const f = font(/Carter/), phrase = 'I WAS THE ADULT SUPERVISION';
+  const params = { text: phrase, width: 101.6, height: 101.6, holeEnabled: false, borderW: 1.2, borderInset: 1.2, textGap: 1.2 };
+  for (const shape of ['plate', 'round', 'hex', 'dogbone']) {
+    const wrapped = build(f, { ...params, baseShape: shape, autoWrap: true });
+    const unwrapped = build(f, { ...params, baseShape: shape });
+    assert(wrapped.scale.x > unwrapped.scale.x, `${shape}: larger font`);
+    assert(wrapped.wrappedText.replace(/\s+/g, ' ') === phrase, `${shape}: all words kept in order`);
+    const border = wrapped.layers.find((l) => l.key === 'border');
+    const outline = wrapped.layers.find((l) => l.key === 'outline');
+    for (const p of outline.polys) for (const [x, y] of p.outer) {
+      assert(distToRings(x, y, ringsOf(border.polys)) >= 1.2 - 0.04, `${shape}: outline clears border by 1.2 mm`);
+    }
+    assert(!wrapped.warnings.some((w) => /border/.test(w)), `${shape}: border does not collide`);
+  }
+  const narrow = build(f, { ...params, baseShape: 'round', autoWrap: true, textGap: 5 });
+  const normal = build(f, { ...params, baseShape: 'round', autoWrap: true });
+  assert(narrow.scale.x < normal.scale.x, 'more clearance reduces font size');
+  assert(wrapCandidates(f, phrase).length === 16, 'tries every word break for the five-word example');
+  const longPhrase = 'ONE TWO THREE FOUR FIVE SIX SEVEN EIGHT NINE TEN';
+  assert(wrapCandidates(f, longPhrase).every((t) => t.replace(/\s+/g, ' ') === longPhrase), 'balanced search keeps all words in long phrases');
+  const candidates = wrapCandidates(f, 'I WAS THE\nADULT SUPERVISION');
+  assert(candidates.every((t) => !t.includes('THE ADULT')), 'required line break survives');
+  assert(wrapCandidates(f, 'SUPERVISION').join() === 'SUPERVISION', 'single long word is scaled, never split');
+  assert(wrapCandidates(f, '   ').length === 1, 'empty input is safe');
+  const manual = build(f, { ...params, baseShape: 'round', autoWrap: false });
+  assert(manual.wrappedText === phrase, 'manual mode leaves text unchanged');
+});
+
+test('95 mm rounded plate wraps the example onto three lines instead of a five-word tower', () => {
+  const m = build(font(/Carter/), { text: 'I WAS THE ADULT SUPERVISION', autoWrap: true,
+    width: 95, height: 95, baseShape: 'plate', plateRadius: 12.7, borderW: 1.2, borderInset: 1.2,
+    textGap: 2, outline: 1.2, embedFront: true, holeEnabled: false });
+  assert(m.wrappedText.split('\n').length === 3, `expected three lines, got ${m.wrappedText}`);
+  assert(m.wrappedText.replace(/\s+/g, ' ') === 'I WAS THE ADULT SUPERVISION', 'words stay in order');
+});
+
+test('Coaster preset has the requested dimensions, flush front, and 89.5 x 1 mm underside recess', () => {
+  const m = build(font(/Carter/), { baseShape: 'coaster', autoWrap: true });
+  for (const [key, value] of Object.entries({ width: 95, height: 95, baseH: 3, plateRadius: 12.7,
+    borderW: 1.2, borderInset: 1.2, embedDepth: 0.4, outline: 1.2 })) near(m.params[key], value, 1e-9, key);
+  assert(m.params.embedFront && !m.params.holeEnabled, 'embedded, no key hole by default');
+  near(m.size.w, 95, 0.01, 'overall width');
+  near(m.size.h, 95, 0.01, 'overall height');
+  near(m.size.d, 3, 1e-9, 'overall thickness');
+  const cut = m.baseCuts.find((c) => c.faceDown);
+  near(cut.z, 1, 1e-9, 'recess depth');
+  const bb = bboxOf(cut.polys);
+  near(bb.x1 - bb.x0, 89.5, 0.01, 'recess diameter X');
+  near(bb.y1 - bb.y0, 89.5, 0.01, 'recess diameter Y');
+  near(bb.x0 + bb.x1, 0, 0.01, 'recess centered X');
+  near(bb.y0 + bb.y1, 0, 0.01, 'recess centered Y');
+  near(netArea(cut.polys), Math.PI * (89.5 / 2) ** 2, 1, 'circular recess area');
+  for (const l of m.layers.filter((l) => l.key !== 'base')) {
+    near(l.z0, 2.6, 1e-9, `${l.key}: inlay floor`);
+    near(l.z1, 3, 1e-9, `${l.key}: flush front`);
+  }
+  const volume = m.layers.reduce((sum, l) => sum + volumeOf({ layers: [l] }, l.key), 0);
+  near(volume, netArea(m.exact.basePlain) * 3 - netArea(cut.polys), 0.2, 'only the underside recess removes total material');
+  for (const file of stlFilesFromModel(m, 'coaster')) {
+    const stats = stlStats(file.data);
+    assert(stats.open === 0, `${file.key}: ${stats.open} open edges`);
+    near(stats.vol / volumeOf(m, file.key), 1, 0.001, `${file.key}: STL volume`);
+  }
+  near(netArea(laserLayers(m).find((l) => l.key === 'base').polys), netArea(m.exact.basePlain), 0.1, 'laser keeps full outer base');
+  assert(!m.warnings.length, m.warnings.join(' | '));
 });
 
 test('a wall hanger is a sawtooth entry slot plus a deeper, wider head pocket, recessed into the back', () => {
@@ -872,6 +978,15 @@ test('a shareable link round-trips through the form', () => {
   assert(JSON.stringify(snapshot(b)) === JSON.stringify(snapshot(a)), `round trip: ${JSON.stringify(snapshot(b))}`);
 });
 
+test('border inset, auto-wrap and clearance survive a shared design link', async () => {
+  const html = await (await fetch('../index.html')).text();
+  const a = new DOMParser().parseFromString(html, 'text/html');
+  const b = new DOMParser().parseFromString(html, 'text/html');
+  applyValues(a, { autoWrap: '1', borderInset: '1.2', textGap: '2.4' });
+  applyValues(b, parseQuery(toQuery(diffState(snapshot(a), snapshot(b)))));
+  for (const id of ['autoWrap', 'borderInset', 'textGap']) assert(snapshot(a)[id] === snapshot(b)[id], `${id}: shared`);
+});
+
 test('batch: parses lists and makes a zip with a summary', async () => {
   const rows = parseBatch('Name,QR\nErich|Deutsch\n\n"A, B",https://x.co/b\nC\tsecond');
   assert(rows.length === 3 && rows[0].text === 'Erich\nDeutsch' && rows[1].text === 'A, B' && rows[1].extra === 'https://x.co/b' && rows[2].extra === 'second', JSON.stringify(rows));
@@ -948,7 +1063,7 @@ async function stepCheck(m, label, { maxMB, arcs = true, exactText = false } = {
     R = await import('../vendor/replicad.js');
     R.setOC(await (await import('../vendor/replicad_single.js')).default());
   }
-  const palette = { text: '#f3cf1c', outline: '#d4206a', outline2: '#ffffff', outline3: '#3fa7ff', base: '#16161a', back: '#f2f2f2' };
+  const palette = { text: '#f3cf1c', outline: '#d4206a', outline2: '#ffffff', outline3: '#3fa7ff', base: '#16161a', border: '#d4206a', back: '#f2f2f2' };
   const res = await buildStep(m, palette);
   const text = await res.blob.text();
   for (const l of m.layers) assert(text.includes(`'${l.name}'`), `${label}: STEP is missing a body named "${l.name}"`);
@@ -963,6 +1078,14 @@ async function stepCheck(m, label, { maxMB, arcs = true, exactText = false } = {
   if (maxMB) assert(mb <= maxMB, `${label}: ${mb.toFixed(1)} MB is over the ${maxMB} MB budget`);
   return `${label}: ${mb.toFixed(1)} MB, ${res.report.edges.points} points -> ${res.report.edges.segments} edges`;
 }
+// Complex front pockets can use the validated polygon fallback; volume and bodies must still match.
+test('STEP: Coaster with front inlays and circular underside recess', () => stepCheck(build(font(/Carter/), {
+  baseShape: 'coaster', text: 'I WAS THE ADULT SUPERVISION', autoWrap: true,
+}), 'coaster', { maxMB: 12, arcs: false }), { step: true });
+test('STEP: flush inset border with auto-wrapped text', () => stepCheck(build(font(/Bangers/), {
+  text: 'I WAS THE ADULT SUPERVISION', baseShape: 'round', width: 101.6, height: 101.6,
+  holeEnabled: false, outline: 1.2, borderW: 1.2, borderInset: 1.2, embedFront: true, autoWrap: true, textGap: 1.2,
+}), 'flush-border', { maxMB: 8 }), { step: true });
 test('STEP: default plate with a QR code', () => stepCheck(build(font(/Carter/), { baseShape: 'plate', backKind: 'qr', qrText: URL_MED }), 'plate+QR', { maxMB: 8, exactText: true }), { step: true });
 test('STEP: text-shaped base, 3 rings, back text', () => stepCheck(build(font(/Graffiti/), { text: 'WHOOP\nWHOOP!!', rings: 3, backKind: 'text', backText: 'If found call\n303-555-0100' }), 'graffiti', { maxMB: 12 }), { step: true });
 test('STEP: dog bone base', () => stepCheck(build(font(/Carter/), { baseShape: 'dogbone', text: 'Rex', width: 70 }), 'dogbone', { maxMB: 4, exactText: true }), { step: true });

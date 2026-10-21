@@ -2,14 +2,16 @@
 // BASE is the cut line (base outline, key hole and all); the others can be stacked cut-outs or engraving.
 // Units are mm. The DXF writer follows img2cad's (LWPOLYLINE, AC1009 header), which the LaserPecker reads.
 
+import { polysToPaths, unionTree, treeToPolys } from './clip.js';
+
 const DXF_COLORS = { BASE: 1, BORDER: 5, OUTLINE: 5, OUTLINE2: 4, OUTLINE3: 3, TEXT: 2, BACK: 6 }; // AutoCAD color indexes
 
 // [{ name, key, polys }] for the model's layers, bottom to top. The base is its full slab (with the key
-// hole), not the lower slab that has the back's pocket cut out.
+// hole), restored from all slabs so front or back inlays never become laser cut lines.
 export function laserLayers(model) {
   const layers = [];
   const base = model.layers.filter((l) => l.key === 'base');
-  if (base.length) layers.push({ name: 'BASE', key: 'base', polys: base[base.length - 1].polys });
+  if (base.length) layers.push({ name: 'BASE', key: 'base', polys: treeToPolys(unionTree(base.flatMap((l) => polysToPaths(l.polys)))) });
   const border = model.layers.find((l) => l.key === 'border');
   if (border) layers.push({ name: 'BORDER', key: 'border', polys: border.polys });
   for (const l of model.layers) {

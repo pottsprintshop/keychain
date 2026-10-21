@@ -66,6 +66,58 @@ export function widestLine(font, text, lineFonts = []) {
   return Math.max(1, ...lines.map((l, i) => (l.trim() ? (lineFonts[i] || font).getAdvanceWidth(l, NOMINAL) : 0)));
 }
 
+// Search word wraps; explicit newlines remain mandatory breaks.
+// The geometry fitter chooses the candidate with the largest printable font size.
+export function wrapCandidates(font, text) {
+  const words = [], breaks = new Set();
+  for (const paragraph of String(text).replace(/\r/g, '').split('\n')) {
+    const tokens = paragraph.trim().split(/\s+/).filter(Boolean);
+    if (words.length && tokens.length) breaks.add(words.length);
+    words.push(...tokens);
+  }
+  const n = words.length;
+  if (!n) return [text];
+  if (n <= 8) {
+    const candidates = [];
+    for (let mask = 0; mask < 2 ** (n - 1); mask++) {
+      if ([...breaks].some((i) => !(mask & (1 << (i - 1))))) continue;
+      const lines = [words[0]];
+      for (let i = 1; i < n; i++) {
+        if (mask & (1 << (i - 1))) lines.push(words[i]);
+        else lines[lines.length - 1] += ' ' + words[i];
+      }
+      candidates.push(lines.join('\n'));
+    }
+    return candidates;
+  }
+  // shortcut: long phrases use one balanced wrap per line count, expand the search if finer packing is needed.
+  const widths = Array.from({ length: n }, () => []);
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j <= n; j++) {
+      if (j > i + 1 && breaks.has(j - 1)) break;
+      widths[i][j] = font.getAdvanceWidth(words.slice(i, j).join(' '), NOMINAL);
+    }
+  }
+  let previous = Array(n + 1).fill(null);
+  previous[0] = { width: 0, lines: [] };
+  const candidates = [];
+  for (let count = 1; count <= n; count++) {
+    const current = Array(n + 1).fill(null);
+    for (let end = count; end <= n; end++) {
+      for (let start = count - 1; start < end; start++) {
+        if (!previous[start] || widths[start][end] === undefined) continue;
+        const width = Math.max(previous[start].width, widths[start][end]);
+        if (!current[end] || width < current[end].width) {
+          current[end] = { width, lines: [...previous[start].lines, words.slice(start, end).join(' ')] };
+        }
+      }
+    }
+    if (current[n]) candidates.push(current[n].lines.join('\n'));
+    previous = current;
+  }
+  return candidates;
+}
+
 // Lay out `text` (newlines split lines) and return unscaled contours, each tagged with its line number.
 // lineShifts[i] nudges line i sideways (percent of the widest line); lineShiftsY[i] nudges it up
 // (percent of the font size); lineFonts[i] swaps that line to its own font (see widestLine above).

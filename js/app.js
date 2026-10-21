@@ -1,5 +1,5 @@
 import { parseFont, fontDisplayName, NOMINAL } from './layout.js';
-import { buildKeychain, angleForHeight, pickLine, hitsArt, DEFAULTS } from './geometry.js';
+import { buildKeychain, angleForHeight, pickLine, hitsArt, DEFAULTS, COASTER_DEFAULTS } from './geometry.js';
 import { createPreview } from './preview.js';
 import { zipStore, downloadBlob, slug } from './exporters.js';
 import { stlFilesFromModel } from './mesh.js';
@@ -51,6 +51,8 @@ function readParams() {
   const nameplate = el.baseShape.value === 'nameplate';
   return {
     text: el.text.value,
+    autoWrap: el.autoWrap.checked,
+    textGap: num(el.textGap, DEFAULTS.textGap, 0),
     align: el.align.value,
     lineSpacing: num(el.lineSpacing, 1, 0.1),
     lineFonts: lineFonts.map((key) => (key && fonts.get(key) ? fonts.get(key).font : null)),
@@ -72,6 +74,7 @@ function readParams() {
     baseOn: el.baseOn.value === '1',
     textOn: el.textOn.value === '1',
     borderW: num(el.borderW, DEFAULTS.borderW, 0),
+    borderInset: num(el.borderInset, DEFAULTS.borderInset, 0),
     plateRadius: num(el.plateRadius, DEFAULTS.plateRadius, 0),
     boneShaft: num(el.boneShaft, DEFAULTS.boneShaft * 100, 20) / 100,
     roundIn: num(el.roundIn, DEFAULTS.roundIn, 0),
@@ -187,6 +190,9 @@ function syncLabels() {
   for (const b of el.holeQuick.children) b.classList.toggle('active', Math.round(angle) === Number(b.dataset.angle));
   el.holeControls.style.opacity = el.holeEnabled.checked ? '1' : '0.45';
   el.hangControls.style.opacity = el.hangEnabled.checked ? '1' : '0.45';
+  el.textGapWrap.hidden = !el.autoWrap.checked;
+  el.autoWrapResult.hidden = !el.autoWrap.checked;
+  el.lineShifts.hidden = el.autoWrap.checked || shiftUi.size < 2;
   el.embedFrontFields.hidden = el.embedFrontHint.hidden = !el.embedFront.checked;
   // Show only the parts of the Back panel that apply, and only the rings that exist.
   const kind = el.backKind.value;
@@ -197,12 +203,13 @@ function syncLabels() {
   el.backArtNote.hidden = kind !== 'art';
   syncLayers();
   // The corner radius is for the rectangle and hexagon; the shaft thickness for the dog bone.
-  el.plateRadiusWrap.hidden = !['plate', 'hex', 'sports', 'nameplate'].includes(el.baseShape.value);
+  el.plateRadiusWrap.hidden = !['plate', 'hex', 'sports', 'nameplate', 'coaster'].includes(el.baseShape.value);
   el.sportWrap.hidden = el.sportNumberWrap.hidden = el.baseShape.value !== 'sports';
   const wantFont = SHAPE_FONT[el.baseShape.value];
   el.impactText.textContent = `This shape is meant for ${wantFont}.`;
   el.useImpact.textContent = `Use ${wantFont}`;
   el.impactHint.hidden = !(wantFont && !currentFontIsNamed(wantFont));
+  el.coasterHint.hidden = el.baseShape.value !== 'coaster';
   el.boneShaftWrap.hidden = el.baseShape.value !== 'dogbone';
   // The Name plate pins the uploaded logo to the right edge itself — the usual placement controls don't apply.
   const nameplateArt = el.baseShape.value === 'nameplate';
@@ -290,6 +297,7 @@ function rebuild(fixed = null) {
       return;
     }
     model = m;
+    el.autoWrapResult.textContent = 'Wrapped lines: ' + m.wrappedText.split('\n').join(' / ');
     preview.setModel(m, colors());
     const p = m.params;
     el.finalSize.textContent =
@@ -347,7 +355,7 @@ function setShift(i, x, y) {
 function renderLineShifts() {
   const lines = el.text.value.replace(/\r/g, '').split('\n');
   const used = lines.map((text, i) => [text.trim(), i]).filter(([text]) => text);
-  el.lineShifts.hidden = used.length < 2;
+  el.lineShifts.hidden = el.autoWrap.checked || used.length < 2;
   el.lineShiftList.replaceChildren();
   shiftUi.clear();
   if (used.length < 2) return;
@@ -456,7 +464,7 @@ function enableLineDragging() {
   preview.enableDrag({
     pick: (x, y) => {
       // Only with two or more lines; a single line is always re-centred, so moving it would just snap back.
-      const line = model && model.lines.length > 1 ? pickLine(model.lines, x, y) : -1;
+      const line = !el.autoWrap.checked && model && model.lines.length > 1 ? pickLine(model.lines, x, y) : -1;
       if (line !== -1) return line;
       return model && hitsArt(model.artPick, x, y) ? 'art' : -1;
     },
@@ -497,11 +505,12 @@ function enableLineDragging() {
 // and has a 0.8 mm rim; the Sports tag is a long thin rectangle (4 x 0.75 in) with a last name on it and the same rim. Picking a shape
 // moves these to that shape's values, but only the ones still at the previous shape's (so nothing you set by hand is lost).
 const SHAPE_DEFAULTS = {
+  coaster: COASTER_DEFAULTS,
   dogbone: { holeAngle: 90, borderW: 0.8 },
   sports: { width: 101.6, height: 19.05, text: 'Deutsch', borderW: 0.8 }, // 4 x 0.75 in, with a 0.8 mm rim
   nameplate: { width: 203.8, height: 50.8, text: 'Pepper\nPotts', baseH: 1, textSize: 75 }, // 8 x 2 in, 1 mm thick, ~18 mm lines
 };
-const SHAPE_KEYED = ['holeAngle', 'borderW', 'baseH', 'textSize']; // plain numeric controls
+const SHAPE_KEYED = ['holeAngle', 'borderW', 'borderInset', 'plateRadius', 'baseH', 'textSize', 'embedDepth', 'outline']; // plain numeric controls
 // textSize's slider is a percent (0-100); DEFAULTS keeps it as a 0-1 fraction, so its plain fallback needs converting.
 const shapeDefault = (shape, key) => SHAPE_DEFAULTS[shape]?.[key] ?? (key === 'textSize' ? DEFAULTS.textSize * 100 : DEFAULTS[key]);
 const sizeFor = (shape) => [shapeDefault(shape, 'width'), shapeDefault(shape, 'height')]; // mm
@@ -522,9 +531,16 @@ el.baseShape.addEventListener('change', () => {
     el.text.value = shapeDefault(shape, 'text');
     renderLineShifts();
   }
+  if (shape === 'coaster') {
+    el.unit.value = prevUnit = 'mm';
+    setSize(sizeFor(shape));
+    for (const key of SHAPE_KEYED) if (key in COASTER_DEFAULTS) el[key].value = COASTER_DEFAULTS[key];
+    el.embedFront.checked = true;
+    el.holeEnabled.checked = false;
+  } else if (prevShape === 'coaster' && el.embedFront.checked) el.embedFront.checked = false;
   // Name plates aren't keychains \u2014 no key ring hole by default (the box remembers if you'd already turned it off).
-  if (shape === 'nameplate' && prevShape !== 'nameplate' && el.holeEnabled.checked) el.holeEnabled.checked = false;
-  else if (prevShape === 'nameplate' && shape !== 'nameplate' && !el.holeEnabled.checked) el.holeEnabled.checked = true;
+  if (['nameplate', 'coaster'].includes(shape) && !['nameplate', 'coaster'].includes(prevShape) && el.holeEnabled.checked) el.holeEnabled.checked = false;
+  else if (['nameplate', 'coaster'].includes(prevShape) && !['nameplate', 'coaster'].includes(shape) && !el.holeEnabled.checked) el.holeEnabled.checked = true;
   prevShape = shape;
   if (SHAPE_FONT[shape]) useFontNamed(SHAPE_FONT[shape]).then(() => schedule());
   schedule();
@@ -692,6 +708,10 @@ function designQuery() {
     const plain = key === 'textSize' ? DEFAULTS.textSize * 100 : DEFAULTS[key];
     if (shapeDefault(el.baseShape.value, key) !== plain) values[key] = el[key].value;
   }
+  if (el.baseShape.value === 'coaster') {
+    values.embedFront = el.embedFront.checked ? '1' : '0';
+    values.holeEnabled = el.holeEnabled.checked ? '1' : '0';
+  }
   return toQuery(values);
 }
 
@@ -711,10 +731,12 @@ function applyFromUrl() {
   // A link that names a shape but not where the hole goes (or its border) gets that shape's usual ones.
   if (controls.baseShape) {
     const shape = el.baseShape.value;
+    if (shape === 'coaster' && !('unit' in controls)) el.unit.value = 'mm';
     for (const key of SHAPE_KEYED) if (!(key in controls)) el[key].value = String(shapeDefault(shape, key));
     if (!('width' in controls) && !('height' in controls)) setSize(sizeFor(shape));
     if (!('text' in controls)) el.text.value = shapeDefault(shape, 'text');
-    if (shape === 'nameplate' && !('holeEnabled' in controls)) el.holeEnabled.checked = false;
+    if (shape === 'coaster' && !('embedFront' in controls)) el.embedFront.checked = true;
+    if (['nameplate', 'coaster'].includes(shape) && !('holeEnabled' in controls)) el.holeEnabled.checked = false;
   }
   if (font) {
     const opt = [...el.font.options].find((o) => o.textContent === font);
@@ -1008,7 +1030,7 @@ function initForm() {
   el.width.value = +(DEFAULTS.width / k).toFixed(3);
   el.height.value = +(DEFAULTS.height / k).toFixed(3);
   el.width.step = el.height.step = '0.05';
-  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'backDepth', 'backMargin', 'plateRadius', 'borderW', 'ring2W', 'ring2H', 'ring3W', 'ring3H', 'artLines']) {
+  for (const key of ['textH', 'midH', 'baseH', 'outline', 'baseMargin', 'roundIn', 'roundOut', 'holeDia', 'holeEdge', 'holeGap', 'backDepth', 'backMargin', 'plateRadius', 'borderW', 'borderInset', 'textGap', 'ring2W', 'ring2H', 'ring3W', 'ring3H', 'artLines']) {
     el[key].value = DEFAULTS[key];
   }
   el.boneShaft.value = DEFAULTS.boneShaft * 100;

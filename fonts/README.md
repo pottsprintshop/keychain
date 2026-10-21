@@ -8,6 +8,14 @@
 | `Impact.ttf` | Impact, version 2.35 | Monotype Typography, Inc. |
 | `Kabel.ttf` | Kabel Book | Fantazia Fonts and Sounds (A. Carr) |
 
+## Added Google Fonts
+
+Bundled from the [Google Fonts source repository](https://github.com/google/fonts):
+Luckiest Guy (`LuckiestGuy-Regular.ttf`, Apache 2.0; `luckiestguy-LICENSE.txt`),
+Bangers, Lilita One, Titan One, and Bungee (their `*-Regular.ttf` files, SIL Open Font License;
+`bangers-OFL.txt`, `lilitaone-OFL.txt`, `titanone-OFL.txt`, `bungee-OFL.txt`).
+The original license notices are included alongside the fonts.
+
 ## Impact
 
 `Impact.ttf` is the copy the shop owner supplied for the Sports tag, and the shop owner is responsible for the

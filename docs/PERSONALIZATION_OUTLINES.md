@@ -3,7 +3,8 @@
 This optional local CLI reuses `js/layout.js` and opentype.js. It does not load Replicad or change the browser coaster,
 keychain, batch or export behavior. No fonts or layout source need to be copied to SpooderCAD.
 
-Run `node scripts/personalization-outline.mjs` with one JSON object on stdin. Required fields:
+Requires Node 18 or newer; no package installation or browser build is needed. The optional package manifest declares
+the existing JavaScript ES modules for Node. Run `node scripts/personalization-outline.mjs` with one JSON object on stdin. Required fields:
 
 ```json
 {

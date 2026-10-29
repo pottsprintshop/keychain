@@ -79,3 +79,34 @@ newline/pipe parity, repeated hashes, missing glyphs, wrong/missing font bytes,
 separate Bold, and byte-identical legacy output for all five existing fonts.
 The Regular test skips on machines lacking the pinned local licensed font; CI
 continues to exercise explicit unavailability and the existing font catalog.
+
+## Font Book installations (follow-up)
+
+Consumers should prefer `scripts/personalization-local.mjs` when available. It
+looks in both `~/Library/Fonts` and `/Library/Fonts`, including subfolders up to
+three levels deep. Font Book can rename the files: identity is established by
+the registry's SHA-256, never by family resemblance or a filename alone. Regular
+and Bold remain distinct; installing only Medium/Bold does not supply Regular.
+The operator-only `KEYCHAIN_PERSONALIZATION_FONTS_DIR` overrides all automatic
+locations, including an empty/invalid directory (no fallback).
+
+Discovery inspects at most 2048 entries, 64 MiB total font bytes and 8 MiB per
+file. LEMON-named entries are inspected first. Very large installations can use a
+small operator-configured font directory. Files with unexpected bytes cannot
+become production fonts. A mismatched canonical filename retains the original
+`font_revision_mismatch` error if no correctly pinned copy exists.
+
+The installation adapter stages selected files in a private temporary directory,
+invokes the unchanged pinned provider, and removes the temporary files afterward.
+These copies remain local; no binaries are committed, served, or embedded in
+manufacturing output. The provider rechecks the staged bytes before parsing.
+The adapter and resolver are outside the original engine's hashed source set:
+existing `8f7929…` and `15b567…` pins and outline bytes remain unchanged. No new
+layout engine or font-byte revision is introduced.
+
+Regression: the previous provider misses a renamed/nested Font Book file; the
+adapter finds the exact same bytes. Tests cover user/system directory selection,
+renamed Regular and Bold, multiline outlines, missing/mismatched bytes, explicit
+override precedence and exact output/engine equality. The reported Mac Neo file
+location and installed byte revision have not been inspected remotely; different
+font revisions remain explicit errors, rather than being accepted by name.

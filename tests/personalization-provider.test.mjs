@@ -18,6 +18,7 @@ test('legacy engine and all five font outputs remain byte-identical',()=>{
 test('missing local fonts are explicit, without substitution or changed legacy behavior',()=>{
  const path=mkdtempSync(join(tmpdir(),'keychain-no-fonts-'));try{
   const env={...process.env,KEYCHAIN_PERSONALIZATION_FONTS_DIR:path},c=catalog(env);
+  assert.equal(c.engine_sha256,catalog(process.env).engine_sha256); // Availability must not change the engine pin.
   assert.equal(c.default_font_id,'lemon-milk');assert.equal(c.fonts.length,5);assert.ok(c.unavailable_fonts.some(f=>f.id==='lemon-milk'&&f.error==='font_unavailable'));
   const r={...request(c),font_id:'lemon-milk',font_sha256:'0'.repeat(64)};
   assert.equal(JSON.parse(run(script,r,env).stdout).error,'font_unavailable');

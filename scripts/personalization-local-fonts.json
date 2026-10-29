@@ -1,0 +1,12 @@
+{
+  "lemon-milk": {
+    "label": "LEMON MILK",
+    "filename": "LEMONMILK-Regular.otf",
+    "sha256": "de77a61b842958dc4efbefccb5532824f2d5efd738ff5fecc0d5d6eb6528896b"
+  },
+  "lemon-milk-bold": {
+    "label": "LEMON MILK Bold",
+    "filename": "LEMONMILK-Bold.otf",
+    "sha256": "07050370cce15356c771df836dc18e156b82209a3c6376ecd2ca846cf726c7be"
+  }
+}

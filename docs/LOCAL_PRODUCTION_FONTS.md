@@ -36,8 +36,8 @@ repository are not evidence of a redistribution grant and are not used as the
 production gateway's default font source.
 
 The operator must obtain appropriate rights directly with MARSNEV before
-production use. The owner confirmed the required donation and personal local
-application use during implementation. This does not grant redistribution rights
+production use. The operator confirmed appropriate rights for local use during implementation.
+This does not grant redistribution rights
 for the font software; the production gateway continues to load only local files.
 
 Install the matching Regular OTF as `~/Library/Fonts/LEMONMILK-Regular.otf`.

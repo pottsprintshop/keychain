@@ -35,10 +35,10 @@ No font binaries are added by this change. Existing Bold/Medium assets in this
 repository are not evidence of a redistribution grant and are not used as the
 production gateway's default font source.
 
-The operator must obtain/confirm appropriate commercial rights directly with
-MARSNEV before production use. The installed Regular file was inspected locally;
-installation alone does not prove the owner's commercial license. Owner receipt
-or license confirmation remained pending during implementation.
+The operator must obtain appropriate rights directly with MARSNEV before
+production use. The owner confirmed the required donation and personal local
+application use during implementation. This does not grant redistribution rights
+for the font software; the production gateway continues to load only local files.
 
 Install the matching Regular OTF as `~/Library/Fonts/LEMONMILK-Regular.otf`.
 Bold is optional and separately named `LEMONMILK-Bold.otf`. Operators may set

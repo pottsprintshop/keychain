@@ -32,7 +32,7 @@ export function estimate(model, s) {
 
 // Regions of `polys` thinner than `minDetail` (an opening removes them), and gaps narrower than it
 // (a closing fills them). Anything smaller than 0.12 mm^2 is just a sharp corner or a fin, not a problem.
-function thinAndGaps(polys, minDetail) {
+export function thinAndGaps(polys, minDetail) {
   const r = minDetail / 2;
   if (!(r > 0) || !polys.length) return { thin: [], gaps: [] };
   const paths = polysToPaths(polys);

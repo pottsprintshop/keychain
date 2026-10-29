@@ -55,3 +55,27 @@ Tests: `node --test tests/personalization.test.mjs`. Existing browser suite: ser
 The CAD proposal and native receiver are tracked in `pottsprintshop/SpooderCAD/docs/PERSONALIZATION_REV_A.md`.
 Saved Regions, native production validation, customer forms, acceptance, variant persistence and plate export are separate
 increments. No production readiness is claimed by this outline interface.
+
+## Saved Region provider (v2)
+
+`scripts/personalization-region.mjs` is the bounded local adapter for saved CAD
+regions. `--catalog` returns stable font IDs and byte/engine hashes. Requests use
+the v1 layout fields plus `minimum_stroke_mm` and `minimum_ink_height_mm` and
+must match the pinned engine and font hashes. No request accepts filesystem paths.
+
+It calls the shared layout implementation, then applies the existing coaster
+`thinAndGaps` morphology to the fitted outlines. Curves flatten at 0.005 mm for
+this printability check; the exact Bézier contours remain the geometry transport.
+The original 0.12 mm² ignored-tip-area convention is retained and disclosed in
+the result. Small isolated ink islands are rejected against the stroke limit.
+Each nonempty line must meet its minimum actual ink height. This is a conservative
+manufacturing gate, not proof of native solid validity; OCCT validates that later.
+
+The initial five fonts have checked-in redistribution notices. Font bytes remain
+in this repository; consumers pin hashes and use the trusted local provider.
+Source is reused by import, not duplicated into a second CAD application.
+The private module package and fixed operator Node process require Node 18+.
+
+Fresh checks: `node --test tests/personalization*.test.mjs` (11 tests), including
+pipe/newline equivalence, deterministic output, real morphology, missing glyphs,
+engine/font mismatch, minimum dimensions, and malformed path-bearing input.

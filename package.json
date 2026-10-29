@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": { "test:outlines": "node --test tests/personalization.test.mjs" }
+}

@@ -258,6 +258,10 @@ vendor/                   third-party libraries (see vendor/README.md)
 
 ## Self-test
 
+For the optional local CAD outline interface and its separate tests, see
+[`docs/PERSONALIZATION_OUTLINES.md`](docs/PERSONALIZATION_OUTLINES.md). This reuses the text layout without loading
+the browser CAD kernel; it does not change the existing coaster or batch workflow or certify production printability.
+
 Open `tests/index.html` (over http, e.g. `http://localhost:8000/tests/`) and press **Run all**. It builds
 keychains and checks them: STL bodies watertight with the right volume across 36 configurations, the key hole
 clearing the outline at every angle, the back content inside its margin and centered, QR codes that decode

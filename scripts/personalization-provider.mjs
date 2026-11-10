@@ -16,6 +16,9 @@ function legacyCall(input){
   if(r.error||r.signal||!r.stdout)fail('legacy_provider_unavailable');
   return {raw:r.stdout,status:r.status,value:JSON.parse(r.stdout)};
 }
+// Engine identities that predate later registry entries. Their Lemon Milk output is byte-identical (same layout code), so
+// pins saved under them stay valid; a font added later is refused under them (engine_revision_mismatch), never substituted.
+const PRIOR_ENGINES={'15b567f00010068db288ab489d4b7112a3201900831c6be77aa5da6b219ab732':['lemon-milk','lemon-milk-bold']};
 const labels={bangers:'Bangers',bungee:'Bungee','lilita-one':'Lilita One','luckiest-guy':'Luckiest Guy','titan-one':'Titan One'};
 try{
   const old=legacyCall();if(old.status||old.value.version!==2)fail('legacy_provider_unavailable');
@@ -34,10 +37,10 @@ try{
       local[id]={entry,bytes};
     }catch(e){unavailable.push({id,label:entry.label,error:e instanceof PersonalizationError?e.code:'font_unavailable'});}
   }
-  const fonts=[...old.value.fonts.map(f=>({...f,label:labels[f.id]||f.id,supported_engine_sha256:[old.value.engine_sha256,engine]})),
-    ...Object.entries(local).map(([id,{entry}])=>({id,label:entry.label,sha256:entry.sha256,supported_engine_sha256:[engine]}))];
+  const fonts=[...old.value.fonts.map(f=>({...f,label:labels[f.id]||f.id,supported_engine_sha256:[old.value.engine_sha256,...Object.keys(PRIOR_ENGINES),engine]})),
+    ...Object.entries(local).map(([id,{entry}])=>({id,label:entry.label,sha256:entry.sha256,supported_engine_sha256:[...Object.entries(PRIOR_ENGINES).filter(([,ids])=>ids.includes(id)).map(([e])=>e),engine]}))];
   if(process.argv.length===3&&process.argv[2]==='--catalog'){
-    process.stdout.write(JSON.stringify({version:2,engine_sha256:engine,supported_engine_sha256:[old.value.engine_sha256,engine],default_font_id:'lemon-milk',fonts,unavailable_fonts:unavailable}));
+    process.stdout.write(JSON.stringify({version:2,engine_sha256:engine,supported_engine_sha256:[old.value.engine_sha256,...Object.keys(PRIOR_ENGINES),engine],default_font_id:'lemon-milk',fonts,unavailable_fonts:unavailable}));
   }else{
     if(process.argv.length!==2)fail('invalid_arguments');
     const chunks=[];let size=0;
@@ -47,7 +50,8 @@ try{
     // Existing pins bypass all extended behavior and retain identical JSON/hash.
     if(r.engine_sha256===old.value.engine_sha256){const out=legacyCall(raw);process.stdout.write(out.raw);process.exitCode=out.status;}
     else{
-      if(r.engine_sha256!==engine)fail('engine_revision_mismatch');
+      if(r.engine_sha256!==engine&&!Object.hasOwn(PRIOR_ENGINES,r.engine_sha256))fail('engine_revision_mismatch');
+      if(r.engine_sha256!==engine&&!old.value.fonts.some(f=>f.id===r.font_id)&&!PRIOR_ENGINES[r.engine_sha256].includes(r.font_id))fail('engine_revision_mismatch');
       let result;
       if(old.value.fonts.some(f=>f.id===r.font_id)){
         const out=legacyCall(JSON.stringify({...r,engine_sha256:old.value.engine_sha256}));
@@ -69,7 +73,7 @@ try{
         if(polys.some(p=>Math.abs(polyArea(p.outer))-p.holes.reduce((s,h)=>s+Math.abs(polyArea(h)),0)<minimum_stroke_mm**2))fail('tiny_islands');
         result.version=2;result.printability={minimum_stroke_mm,minimum_ink_height_mm,tolerance_mm:.005,ignored_tip_area_mm2:.12};
       }
-      result.engine_sha256=engine;
+      result.engine_sha256=r.engine_sha256;
       const {outline_sha256:prior,...content}=result;result.outline_sha256=sha(JSON.stringify(content));
       process.stdout.write(JSON.stringify({ok:true,result}));
     }

@@ -18,7 +18,7 @@ test('Font Book renamed/nested files are found by byte identity; layout engine/o
   const c=JSON.parse(run(wrapper,undefined,env).stdout);assert.ok(c.fonts.some(f=>f.id==='lemon-milk-bold'));
   const directFolder=join(home,'pinned');mkdirSync(directFolder);copyFileSync(bold,join(directFolder,'LEMONMILK-Bold.otf'));
   const original=JSON.parse(run(direct,undefined,{...env,KEYCHAIN_PERSONALIZATION_FONTS_DIR:directFolder}).stdout);
-  assert.equal(c.engine_sha256,original.engine_sha256);assert.equal(c.engine_sha256,'15b567f00010068db288ab489d4b7112a3201900831c6be77aa5da6b219ab732');
+  assert.equal(c.engine_sha256,original.engine_sha256);assert.equal(c.engine_sha256,'a6715d88d5460ab16408542472708f7c8040a101424ca466603d7bf948f651f0');assert.ok(c.supported_engine_sha256.includes('15b567f00010068db288ab489d4b7112a3201900831c6be77aa5da6b219ab732')); // registry grew (Carter One): new engine id, prior Lemon Milk pins stay supported
   assert.equal(run(wrapper,request(c),env).stdout,run(direct,request(original),{...env,KEYCHAIN_PERSONALIZATION_FONTS_DIR:directFolder}).stdout);
  }finally{rmSync(home,{recursive:true,force:true});}
 });
